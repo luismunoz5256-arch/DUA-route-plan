@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>DUA Route Planner</title>
+    <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">DUA Route Planner</div>
+      <nav class="tabs" role="tablist">
+        <button class="tab active" data-tab="plan">Plan routes</button>
+        <button class="tab" data-tab="clients">Clients</button>
+        <button class="tab" data-tab="settings">Settings</button>
+        <button class="tab" data-tab="help">Help</button>
+      </nav>
+    </header>
+
+    <div id="setup-banner" class="banner warn" hidden></div>
+
+    <main>
+      <!-- PLAN -->
+      <section id="tab-plan" class="panel">
+        <div class="card">
+          <div class="row wrap gap">
+            <label>Delivery date <input type="date" id="plan-date" /></label>
+            <label>Drivers
+              <select id="plan-drivers"></select>
+            </label>
+            <label>Leave warehouse <input type="time" id="plan-start" /></label>
+            <label>Back by <input type="time" id="plan-end" /></label>
+            <label title="How hard to push drivers to finish at the same time. Low = cheapest.">Even finish times
+              <select id="plan-balance">
+                <option value="low">Low (cheapest)</option>
+                <option value="medium">Medium</option>
+                <option value="high">High (most even)</option>
+              </select>
+            </label>
+          </div>
+          <div id="driver-names" class="row wrap gap small-gap"></div>
+        </div>
+
+        <div class="card">
+          <div class="row wrap between">
+            <h2>Stops <span id="stop-count" class="muted"></span></h2>
+            <div class="row wrap gap small-gap">
+              <input type="search" id="stop-search" placeholder="Search clients…" />
+              <button id="btn-select-scheduled" class="secondary">Select today's regulars</button>
+              <button id="btn-select-none" class="secondary">Clear</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="stops">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Client</th>
+                  <th>Usual days</th>
+                  <th>Unload</th>
+                  <th>Priority</th>
+                  <th>Deliver by</th>
+                  <th>Note for today</th>
+                </tr>
+              </thead>
+              <tbody id="stop-rows"></tbody>
+            </table>
+          </div>
+          <p id="no-clients" class="muted" hidden>No clients yet. Add them in the <a href="#" data-goto="clients">Clients</a> tab.</p>
+        </div>
+
+        <div class="row gap">
+          <button id="btn-optimize" class="primary big">Build routes</button>
+          <span id="plan-status" class="muted"></span>
+        </div>
+
+        <div id="results" hidden>
+          <div class="card">
+            <h2>Compare driver counts</h2>
+            <p class="muted small">Labor = paid time from leaving the warehouse until each driver is back × hourly rate. Click a row to view that plan.</p>
+            <div class="table-wrap"><table class="compare"><tbody id="compare-rows"></tbody></table></div>
+            <p id="data-note" class="muted small"></p>
+          </div>
+          <div class="row wrap between noprint">
+            <h2 id="plan-title"></h2>
+            <div class="row gap small-gap">
+              <button id="btn-print" class="secondary">Print route sheets</button>
+            </div>
+          </div>
+          <div id="map" class="card map noprint"></div>
+          <div id="driver-cards" class="cards"></div>
+        </div>
+      </section>
+
+      <!-- CLIENTS -->
+      <section id="tab-clients" class="panel" hidden>
+        <div class="card">
+          <div class="row wrap between">
+            <h2>Clients <span id="client-count" class="muted"></span></h2>
+            <div class="row wrap gap small-gap">
+              <input type="search" id="client-search" placeholder="Search…" />
+              <button id="btn-add-client" class="primary">Add client</button>
+              <button id="btn-locate-all" class="secondary">Find missing locations</button>
+              <button id="btn-import-csv" class="secondary">Import CSV</button>
+              <button id="btn-export-csv" class="secondary">Export CSV</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="clients">
+              <thead>
+                <tr><th>Name</th><th>Address</th><th>Days</th><th>Unload</th><th>Hours</th><th>Notes</th><th></th></tr>
+              </thead>
+              <tbody id="client-rows"></tbody>
+            </table>
+          </div>
+          <p class="muted small">CSV columns: <code>name, address, days, unload, earliest, latest, notes</code>. Days can look like <code>Mon Wed Fri</code>, <code>Mon-Sat</code> or <code>daily</code>. <a href="#" id="csv-template">Download a blank template</a>.</p>
+        </div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section id="tab-settings" class="panel" hidden>
+        <form id="settings-form" class="card grid-form">
+          <h2>Warehouse</h2>
+          <label>Name <input name="depotName" /></label>
+          <label class="span2">Address
+            <div class="row gap small-gap"><input name="depotAddress" class="grow" /><button type="button" id="btn-locate-depot" class="secondary">Find</button></div>
+          </label>
+          <label>Latitude <input name="depotLat" type="number" step="any" /></label>
+          <label>Longitude <input name="depotLng" type="number" step="any" /></label>
+
+          <h2>Day defaults</h2>
+          <label>Leave warehouse <input name="start" type="time" /></label>
+          <label>Back by <input name="endBy" type="time" /></label>
+          <label>Hourly pay ($) <input name="payRate" type="number" step="0.01" min="0" /></label>
+          <label>Default unload time (min) <input name="defaultUnload" type="number" min="0" /></label>
+          <label>Priority stops: deliver by <input name="priorityBy" type="time" /></label>
+
+          <h2>Google Maps</h2>
+          <label class="span2">API key (saved only in this browser)
+            <div class="row gap small-gap"><input name="apiKey" type="password" class="grow" autocomplete="off" /><button type="button" id="btn-show-key" class="secondary">Show</button></div>
+          </label>
+          <label>Traffic sample time <input name="trafficTime" type="time" /></label>
+          <label>Monthly limit: drive-time lookups <input name="monthlyElementLimit" type="number" min="0" /></label>
+          <label>Monthly limit: address lookups <input name="monthlyGeocodeLimit" type="number" min="0" /></label>
+          <div class="span2 muted small" id="usage-line"></div>
+
+          <div class="span2 row gap"><button class="primary" type="submit">Save settings</button><span id="settings-saved" class="muted"></span></div>
+        </form>
+
+        <div class="card">
+          <h2>Saved drive times</h2>
+          <p class="muted small" id="matrix-line"></p>
+          <div class="row wrap gap small-gap">
+            <button id="btn-preload" class="secondary">Pre-load drive times for all clients</button>
+            <button id="btn-clear-matrix" class="secondary danger">Forget saved drive times</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Backup</h2>
+          <p class="muted small">Your clients and settings live only in this browser. Download a backup now and then, or to move to another computer. The API key is not included.</p>
+          <div class="row wrap gap small-gap">
+            <button id="btn-backup" class="secondary">Download backup</button>
+            <button id="btn-restore" class="secondary">Restore from backup</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- HELP -->
+      <section id="tab-help" class="panel" hidden>
+        <div class="card prose">
+          <h2>Daily use</h2>
+          <ol>
+            <li>Open <b>Plan routes</b>. Pick the delivery date. Clients who usually order that day are already checked.</li>
+            <li>Check or uncheck stops to match today's orders. Tick <b>Priority</b> for anything that must arrive early and set its <b>Deliver by</b> time.</li>
+            <li>Choose the number of drivers and click <b>Build routes</b>.</li>
+            <li>Look at <b>Compare driver counts</b>: the cheapest plan that gets everyone back on time is marked <span class="tag good">Best</span>. Click a row to see it.</li>
+            <li>Print the route sheets, or use <b>Open in Google Maps</b> / <b>Copy for text</b> on each driver card to send it to the driver's phone.</li>
+          </ol>
+          <h2>Good to know</h2>
+          <ul>
+            <li>Drive times come from Google with typical midday traffic and are saved, so planning a normal day costs nothing. Only new clients trigger a small lookup.</li>
+            <li>If there is no Google key (or the monthly limit is reached), the planner uses straight-line estimates and says so.</li>
+            <li>Lines on the map are straight lines between stops, not the actual roads. Google Maps gives the turn-by-turn route.</li>
+            <li>Google Maps links hold up to 9 stops each, so longer routes get "Part 1", "Part 2" links.</li>
+            <li>Client "earliest / latest" hours are optional. The driver will wait if they arrive before a client opens.</li>
+          </ul>
+        </div>
+      </section>
+    </main>
+
+    <dialog id="client-dialog">
+      <form id="client-form" method="dialog" class="grid-form">
+        <h2 class="span2" id="client-dialog-title">Client</h2>
+        <label class="span2">Name <input name="name" required /></label>
+        <label class="span2">Address
+          <div class="row gap small-gap"><input name="address" class="grow" required /><button type="button" id="btn-locate-client" class="secondary">Find</button></div>
+        </label>
+        <div class="span2 muted small" id="client-locate-msg"></div>
+        <label>Latitude <input name="lat" type="number" step="any" /></label>
+        <label>Longitude <input name="lng" type="number" step="any" /></label>
+        <fieldset class="span2 days">
+          <legend>Usually orders on</legend>
+          <div id="client-days" class="row wrap gap small-gap"></div>
+        </fieldset>
+        <label>Unload time (min) <input name="unload" type="number" min="0" /></label>
+        <span></span>
+        <label>Earliest delivery (optional) <input name="open" type="time" /></label>
+        <label>Latest delivery (optional) <input name="close" type="time" /></label>
+        <label class="span2">Notes for driver <input name="notes" placeholder="e.g. back door, ask for Maria" /></label>
+        <div class="span2 row gap end">
+          <button type="button" class="secondary" id="btn-cancel-client">Cancel</button>
+          <button type="submit" class="primary" value="save">Save client</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="vendor/leaflet/leaflet.js"></script>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>

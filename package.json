@@ -1,0 +1,11 @@
+{
+  "name": "dua-route-plan",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Delivery route planner: balanced, traffic-aware routes for multiple drivers.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "python3 -m http.server 8080"
+  }
+}
