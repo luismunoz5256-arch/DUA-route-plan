@@ -2,6 +2,7 @@
 // (after the #), so nothing is stored on a server. "Done" ticks are saved on the phone only.
 import { decodeRoute } from './share.js';
 import { renderRoute } from './routeview.js';
+import { t, langSwitch, translatePage } from './i18n.js';
 
 const el = document.querySelector('#stops');
 
@@ -10,7 +11,7 @@ function render() {
   try {
     route = decodeRoute(location.hash.slice(1));
   } catch {
-    el.innerHTML = '<p class="error">This route link is incomplete. Ask the office to send it again.</p>';
+    el.innerHTML = `<p class="error">${t('This route link is incomplete. Ask the office to send it again.')}</p>`;
     return;
   }
   const doneKey = 'dua.done.' + location.hash.slice(1, 60);
@@ -18,7 +19,7 @@ function render() {
   try {
     done = JSON.parse(localStorage.getItem(doneKey) || '{}');
   } catch {}
-  document.title = `${route.driver} – route`;
+  document.title = t('{name} – route', { name: route.driver });
   renderRoute(el, route, done, (stop, isDone) => {
     done[stop] = isDone;
     try {
@@ -28,5 +29,7 @@ function render() {
   });
 }
 
+translatePage();
+document.querySelector('.lang-slot').append(langSwitch());
 window.addEventListener('hashchange', render);
 render();

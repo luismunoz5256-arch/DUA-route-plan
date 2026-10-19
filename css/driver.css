@@ -33,3 +33,5 @@ body:has(> .route-view) { margin: 0; background: #f4f6f3; }
 .route-view .btns a.go { background: var(--brand); color: #fff; border-color: var(--brand); }
 .route-view .foot { font-size: 0.85rem; color: var(--muted); }
 .route-view .error { padding: 24px; }
+.route-view.lang-row { padding-bottom: 0; align-items: flex-end; }
+.lang-switch { background: none; border: 0; color: var(--brand, #2f6b3b); text-decoration: underline; font: inherit; font-size: 0.9rem; cursor: pointer; padding: 0; }

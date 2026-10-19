@@ -13,7 +13,7 @@
     <!-- LOGIN -->
     <section id="login" class="login">
       <div class="card login-card">
-        <h1>DUA Route Planner</h1>
+        <div class="row between"><h1>DUA Route Planner</h1><span class="lang-slot"></span></div>
         <form id="login-form">
           <div id="server-box">
             <label>Server address (from the admin)
@@ -21,7 +21,8 @@
             </label>
           </div>
           <div id="setup-box" hidden>
-            <p class="small">First time: create the admin account. You need the <b>setup code</b> written in the Google Sheet script.</p>
+            <p class="small" data-lang="en">First time: create the admin account. You need the <b>setup code</b> written in the Google Sheet script.</p>
+            <p class="small" data-lang="es">Primera vez: cree la cuenta de administrador. Necesita el <b>código de configuración</b> escrito en el script de la hoja de Google.</p>
             <label>Setup code <input name="setupCode" type="password" autocomplete="off" /></label>
           </div>
           <label>Username <input name="username" autocomplete="username" autocapitalize="none" required /></label>
@@ -46,6 +47,7 @@
       </nav>
       <span id="sync-status" class="sync-status"></span>
       <div class="account">
+        <span class="lang-slot"></span>
         <span id="who"></span>
         <button class="link light" id="btn-password">Change password</button>
         <button class="link light" id="btn-logout">Log out</button>
@@ -153,7 +155,10 @@
               <tbody id="stop-rows"></tbody>
             </table>
           </div>
-          <p id="no-clients" class="muted" hidden>No clients yet. Add them in the <a href="#" data-goto="clients">Clients</a> tab.</p>
+          <div id="no-clients" hidden>
+            <p class="muted" data-lang="en">No clients yet. Add them in the <a href="#" data-goto="clients">Clients</a> tab.</p>
+            <p class="muted" data-lang="es">Todavía no hay clientes. Agréguelos en la pestaña <a href="#" data-goto="clients">Clientes</a>.</p>
+          </div>
         </div>
 
         <div class="row gap">
@@ -213,7 +218,9 @@
               <tbody id="client-rows"></tbody>
             </table>
           </div>
-          <p class="muted small">CSV columns: <code>name, address, days, unload, earliest, latest, notes</code>. Days can look like <code>Mon Wed Fri</code>, <code>Mon-Sat</code> or <code>daily</code>. <a href="#" id="csv-template">Download a blank template</a>.</p>
+          <p class="muted small" data-lang="en">CSV columns: <code>name, address, days, unload, earliest, latest, notes</code>. Days can look like <code>Mon Wed Fri</code>, <code>Mon-Sat</code> or <code>daily</code>.</p>
+          <p class="muted small" data-lang="es">Columnas del CSV (en inglés): <code>name, address, days, unload, earliest, latest, notes</code>. Los días se escriben en inglés, por ejemplo <code>Mon Wed Fri</code>, <code>Mon-Sat</code> o <code>daily</code>.</p>
+          <p class="small"><a href="#" id="csv-template">Download a blank template</a></p>
         </div>
       </section>
 
@@ -246,7 +253,7 @@
       <section id="tab-settings" class="panel" hidden>
         <form id="settings-form" class="card grid-form">
           <h2>Warehouse</h2>
-          <label>Name <input name="depotName" /></label>
+          <label>Name <input name="depotName" placeholder="Warehouse" /></label>
           <label class="span2">Address
             <div class="row gap small-gap"><input name="depotAddress" class="grow" /><button type="button" id="btn-locate-depot" class="secondary">Find</button></div>
           </label>
@@ -322,7 +329,7 @@
 
       <!-- HELP -->
       <section id="tab-help" class="panel" hidden>
-        <div class="card prose">
+        <div class="card prose" data-lang="en">
           <h2>Daily use</h2>
           <ol>
             <li>Open <b>Plan routes</b>. Pick the delivery date. Clients who usually order that day are already checked.</li>
@@ -348,7 +355,7 @@
           <h2>How cost is figured</h2>
           <ul>
             <li>Drivers are paid from clock-in (8:00 AM) until they are back at the warehouse. Every extra driver adds their morning hours, so sometimes a little overtime is cheaper than another driver. The planner works that out.</li>
-            <li>Overtime (1.5×): time past 8 hours in a day, or past 40 hours for the week (Texas follows the federal 40-hour rule). Hours already worked this week come from History.</li>
+            <li>Overtime (1.5×): when planning, time past 8 hours in a day or 40 hours in the week. For payroll, only the hours past 40 in the week (the federal rule Texas follows).</li>
             <li>Fuel: miles × fuel cost per mile (Settings).</li>
             <li>Nobody is planned to come back after the <b>Latest return</b> time.</li>
           </ul>
@@ -357,6 +364,43 @@
             <li>Drive times come from Google with typical midday traffic and are saved, so planning a normal day costs nothing. Only new clients trigger a small lookup.</li>
             <li>Lines on the map are straight lines between stops, not the actual roads. Google Maps gives the turn-by-turn route.</li>
             <li>Every plan you build is saved in <b>History</b> under its date (the last one built or changed counts).</li>
+          </ul>
+        </div>
+        <div class="card prose" data-lang="es">
+          <h2>Uso diario</h2>
+          <ol>
+            <li>Abra <b>Planear rutas</b>. Elija la fecha de entrega. Los clientes que suelen pedir ese día ya están marcados.</li>
+            <li>Marque o desmarque paradas según los pedidos de hoy. Marque <b>Prioridad</b> en lo que debe llegar temprano y ponga su hora en <b>Entregar antes de</b>.</li>
+            <li>Elija el número de choferes. Revise las horas de cada chofer en lo que va de la semana (vienen del Historial).</li>
+            <li>Haga clic en <b>Crear rutas</b>. <b>Comparar número de choferes</b> muestra un chofer menos y uno más, con mano de obra (tiempo extra a 1.5×) y combustible. El plan más barato a tiempo está marcado como <span class="tag good">Mejor</span>. Haga clic en una fila para verlo.</li>
+            <li>¿Necesita un cambio? Use ▲ ▼ para reordenar una parada, o <b>Mover a…</b> para dársela a otro chofer. Las horas y el costo se actualizan al instante.</li>
+            <li>Los choferes ven su ruta en cuanto entran en su teléfono (o envíe el <b>enlace para teléfono</b> / imprima las hojas). ¿Pedido de último momento? Use <b>Agregar un pedido tarde</b>; los choferes ven el cambio en un par de minutos.</li>
+          </ol>
+          <h2>Cuentas</h2>
+          <ul>
+            <li><b>Administrador</b>: todo, incluyendo Ajustes y Usuarios (agregar personas, cambiar contraseñas).</li>
+            <li><b>Secretario/a</b>: clientes, paradas del día, crear y enviar rutas, Historial.</li>
+            <li><b>Chofer</b>: entra en su teléfono y ve solo su propia ruta. Sus marcas de <b>Hecho</b> aparecen en la pantalla de la oficina.</li>
+            <li>Use <b>Cambiar contraseña</b> arriba para poner su propia contraseña. <b>Cierre sesión</b> en computadoras y teléfonos compartidos.</li>
+          </ul>
+          <h2>Camiones (administrador)</h2>
+          <ul>
+            <li>Con MyGeotab conectado (Ajustes → Rastreo de camiones), la pestaña <b>Camiones</b> muestra cada camión en vivo, qué paradas planeadas alcanzó y cuándo, cuánto tiempo se quedó, tiempo en ralentí, millas y paradas que no estaban en la ruta.</li>
+            <li>Elija cualquier día pasado para ver el reporte de cada camión de ese día.</li>
+            <li><b>Nómina:</b> en <b>Historial</b>, elija la semana y haga clic en <b>Traer las horas de regreso de esta semana desde los camiones</b>. Las horas cuentan desde la entrada hasta que el camión regresa a la bodega (🚚). El tiempo extra son las horas después de 40 en la semana, pagadas a 1.5×. Luego haga clic en <b>Descargar nómina (CSV)</b>. Una hora escrita a mano en <b>Regreso</b> siempre gana sobre la del camión.</li>
+          </ul>
+          <h2>Cómo se calcula el costo</h2>
+          <ul>
+            <li>A los choferes se les paga desde la entrada (8:00 AM) hasta que regresan a la bodega. Cada chofer extra suma sus horas de la mañana, así que a veces un poco de tiempo extra sale más barato que otro chofer. El planificador lo calcula.</li>
+            <li>Tiempo extra (1.5×): al planear, el tiempo después de 8 horas en un día o de 40 horas en la semana. En la nómina, solo las horas después de 40 en la semana (regla federal que sigue Texas).</li>
+            <li>Combustible: millas × costo de combustible por milla (Ajustes).</li>
+            <li>Nadie se planea para regresar después de la <b>Hora límite de regreso</b>.</li>
+          </ul>
+          <h2>Bueno saber</h2>
+          <ul>
+            <li>Los tiempos de manejo vienen de Google con tráfico típico de mediodía y se guardan, así que planear un día normal no cuesta nada. Solo los clientes nuevos hacen una pequeña consulta.</li>
+            <li>Las líneas del mapa son rectas entre paradas, no las calles reales. Google Maps da la ruta paso a paso.</li>
+            <li>Cada plan que crea se guarda en el <b>Historial</b> con su fecha (cuenta el último que se creó o cambió).</li>
           </ul>
         </div>
       </section>

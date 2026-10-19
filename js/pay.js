@@ -41,3 +41,20 @@ export function weekSummary(history, monday, { regWeekMin, rate }) {
     return { ...row, ot, pay: laborCost(row.total, ot, rate) };
   });
 }
+
+// Puts a driver's real return time (minutes after midnight) into `history`, changing it in place,
+// so a whole week can be updated and then saved once. A day with no plan gets created.
+// A time from the truck never replaces one typed in by hand. Returns true if anything changed.
+export function recordReturn(history, date, name, back, source, shiftStart) {
+  if (back == null) return false;
+  const h = (history[date] ||= { drivers: [], stops: 0, miles: 0, shiftStart });
+  let d = h.drivers.find((x) => x.name === name);
+  if (!d) h.drivers.push((d = { name, stops: 0 }));
+  if (source === 'truck' && d.source === 'manual') return false;
+  if (d.source === source && Math.abs(d.back - back) < 1) return false;
+  d.back = back;
+  d.source = source;
+  d.paid = Math.max(0, back - (h.shiftStart ?? shiftStart));
+  h.updated = Date.now();
+  return true;
+}

@@ -2,6 +2,7 @@
 // Google Sheet server (clients, settings, history, drive times, published routes).
 // Nothing is sent to GitHub.
 import { localDate } from './util.js';
+import { t } from './i18n.js';
 
 const PREFIX = 'dua.';
 
@@ -18,7 +19,7 @@ function write(key, value) {
   try {
     localStorage.setItem(PREFIX + key, JSON.stringify(value));
   } catch (err) {
-    alert('Could not save to this browser: ' + err.message);
+    alert(t('Could not save to this browser:') + ' ' + err.message);
   }
 }
 
@@ -29,7 +30,7 @@ function changed() {
 
 export const DEFAULT_SETTINGS = {
   apiKey: '',
-  depotName: 'Warehouse',
+  depotName: '', // empty = "Warehouse" in the chosen language
   depotAddress: '840 N Hawkins Blvd, El Paso, TX 79915',
   depotLat: null,
   depotLng: null,
@@ -119,21 +120,25 @@ export function saveLastPlan(plan) {
   write('lastPlan', plan);
 }
 
-// Route history: { "2026-10-19": { updated, drivers: [{ name, stops, paid, ot, miles, finish, labor, fuel }], ... } }
+// Route history: { "2026-10-19": { updated, shiftStart, stops, miles, drivers: [{ name, stops, paid, back, miles, source }] } }
+// source: 'truck' (Geotab) or 'manual' (typed in) when `back` is a real return time; missing = planned.
 export function getHistory() {
   return read('history', {});
 }
 export function saveHistoryDay(date, entry) {
   const h = getHistory();
   h[date] = { ...entry, updated: Date.now() };
+  saveHistory(h);
+}
+// Saves a History object changed in place (each changed day carries its own `updated`).
+export function saveHistory(h) {
   write('history', h);
   changed();
 }
 export function deleteHistoryDay(date) {
   const h = getHistory();
   delete h[date];
-  write('history', h);
-  changed();
+  saveHistory(h);
 }
 
 // Routes sent to drivers: { "2026-10-21": { updated, drivers: { "Ana": route } } }
@@ -220,7 +225,7 @@ export function exportBackup() {
   return { app: 'dua-route-plan', version: 3, exported: new Date().toISOString(), ...data, settings };
 }
 export function importBackup(data) {
-  if (!data || data.app !== 'dua-route-plan') throw new Error('This is not a route planner backup file.');
+  if (!data || data.app !== 'dua-route-plan') throw new Error(t('This is not a route planner backup file.'));
   const cur = exportSyncData();
   importSyncData({ ...cur, ...data, settings: { ...data.settings, apiKey: cur.settings.apiKey }, settingsUpdated: Date.now() });
   changed();

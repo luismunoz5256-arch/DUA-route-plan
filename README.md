@@ -14,6 +14,7 @@ Also included:
 - **Late orders:** add a stop to routes that are already sent without reshuffling everyone.
 - **History:** every day's routes, weekly hours per driver, overtime and estimated pay. You can correct a driver's actual return time.
 - **Truck tracking (MyGeotab, optional):** a live truck map, planned vs. actual for every stop, a day report (left, back, driving, idling, unplanned stops) and real return times for payroll. Admin only.
+- **English or Spanish:** click **Español** / **English** at the top of any screen, including the login screen and the driver's phone page. Each computer and phone remembers its own choice.
 - **Logins with roles:** admin, secretary and driver. Everyone sees the same up-to-date data on any computer or phone, stored in a Google Sheet you own.
 
 The website is free to host on GitHub Pages, and the Google Sheet is free too. **Your data never goes on GitHub.**
@@ -146,6 +147,7 @@ A stop counts as reached when the truck stops within 200 meters of the client's 
 - `driver.html` and `js/driver.js`: the driver phone page. The route is packed into the link after `#`, so it never touches a server.
 - `apps-script/Code.gs`: the server. It handles logins (salted SHA-256, 30-day sessions, lockout after repeated failures), role checks, shared data and drivers' done ticks. `test/fake-apps-script.cjs` runs it in Node for the tests.
 - `js/tracking.js`: turns Geotab trips (each one ends where the truck stopped) into left and back times, visits matched to planned stops, and unplanned stops. The server calls MyGeotab's JSON-RPC API (`Authenticate`, `Get` Device / DeviceStatusInfo / Trip / LogRecord) and caches the session.
+- `js/i18n.js` and `js/es.js`: English/Spanish. The English text is the key and `es.js` holds the Spanish; `test/i18n.test.js` fails if any on-screen text is missing a translation.
 - `js/api.js`, `js/sync.js` and `js/merge.js`: login calls and keeping the browser in step with the Sheet. Records merge by last edit, and deletes carry over.
 - `js/matrix.js` and `js/google.js`: Google Routes API `computeRouteMatrix` (`TRAFFIC_AWARE`) and Geocoding API, called from the browser and cached in `localStorage`.
 - `js/store.js`: everything saved in `localStorage` under `dua.*` keys.
@@ -154,5 +156,5 @@ Run locally:
 
 ```sh
 npm start        # serves http://localhost:8080
-npm test         # optimizer, pay, sync-merge, tracking and server/login/Geotab tests (Node 18+)
+npm test         # optimizer, pay, sync-merge, tracking, server/login/Geotab and translation tests (Node 20+)
 ```

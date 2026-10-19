@@ -4,6 +4,7 @@
 import * as store from './store.js';
 import * as api from './api.js';
 import { mergeData, canonical } from './merge.js';
+import { t } from './i18n.js';
 
 // Same list as SECRETARY_SETTINGS in apps-script/Code.gs.
 const SECRETARY_SETTINGS = ['driverCount', 'drivers', 'balance'];
@@ -25,7 +26,7 @@ export async function syncNow() {
     return;
   }
   running = true;
-  hooks.status('Syncing…');
+  hooks.status(t('Syncing…'));
   try {
     const { data: remote, user } = await api.call('pull');
     api.updateUser(user);
@@ -58,7 +59,7 @@ export async function syncNow() {
       hooks.loggedOut();
     } else {
       store.setSyncState({ ...store.getSyncState(), error: err.message || String(err) });
-      hooks.status('Sync problem: ' + (err.message || err));
+      hooks.status(t('Sync problem:') + ' ' + (err.message || err));
     }
   } finally {
     running = false;

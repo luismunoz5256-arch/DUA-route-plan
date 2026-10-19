@@ -177,3 +177,8 @@ body[data-role='driver'] main { padding: 0; }
 .truck-card td:nth-child(n + 3) { white-space: nowrap; }
 .truck-card .tag { white-space: nowrap; }
 #truck-cards { grid-template-columns: repeat(auto-fill, minmax(min(100%, 500px), 1fr)); }
+
+/* Language switch */
+.account .lang-switch { color: #fff; }
+.login-card .lang-switch { color: var(--brand); }
+[data-lang][hidden] { display: none !important; }

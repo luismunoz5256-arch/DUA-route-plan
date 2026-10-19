@@ -1,6 +1,6 @@
 // Drive-time table between today's stops. Google times are saved once and reused,
 // so normal daily planning makes no Google requests at all.
-import { routeMatrix } from './google.js';
+import { routeMatrix, CHUNK } from './google.js';
 
 export function locKey(p) {
   return `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
@@ -57,7 +57,7 @@ function keyToPoint(k) {
 }
 
 // Fetch missing pairs from Google and add them to the cache (mutates `cache`).
-// onStatus(text) reports progress; onElements(n) reports billed lookups as they happen.
+// onStatus("2/5") reports progress; onElements(n) reports billed lookups as they happen.
 export async function fillMissing(plan, cache, apiKey, departure, { onStatus, onElements } = {}) {
   const { keys, newKeys, oldKeys } = plan;
   if (!newKeys.length) return 0;
@@ -68,13 +68,16 @@ export async function fillMissing(plan, cache, apiKey, departure, { onStatus, on
       count++;
     }
   };
-  const progress = (label) => (d, t, n) => {
+  let done = 0;
+  const total = (n) => Math.ceil(n / CHUNK);
+  const steps = total(newKeys.length) * total(keys.length) + total(oldKeys.length) * total(newKeys.length);
+  const progress = (_d, _t, n) => {
     onElements?.(n);
-    onStatus?.(`${label} ${d}/${t}`);
+    onStatus?.(`${++done}/${steps}`);
   };
-  store(newKeys, keys, await routeMatrix(apiKey, newKeys.map(keyToPoint), keys.map(keyToPoint), departure, progress('Getting traffic times')));
+  store(newKeys, keys, await routeMatrix(apiKey, newKeys.map(keyToPoint), keys.map(keyToPoint), departure, progress));
   if (oldKeys.length) {
-    store(oldKeys, newKeys, await routeMatrix(apiKey, oldKeys.map(keyToPoint), newKeys.map(keyToPoint), departure, progress('Getting traffic times (return trips)')));
+    store(oldKeys, newKeys, await routeMatrix(apiKey, oldKeys.map(keyToPoint), newKeys.map(keyToPoint), departure, progress));
   }
   return count;
 }

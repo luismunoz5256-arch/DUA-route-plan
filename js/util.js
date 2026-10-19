@@ -14,6 +14,7 @@ export function toMin(hhmm) {
 
 // 690 -> "11:30 AM"
 export function fmtTime(min) {
+  if (min == null || Number.isNaN(min)) return '—';
   const total = Math.round(min);
   let h = Math.floor(total / 60) % 24;
   const m = total % 60;
@@ -47,11 +48,12 @@ export function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 }
 
-export function daysLabel(days) {
-  if (!days || !days.some(Boolean)) return '—';
-  if (days.every(Boolean)) return 'Every day';
-  if (!days[0] && days.slice(1, 7).every(Boolean)) return 'Mon–Sat';
-  if (!days[0] && !days[6] && days.slice(1, 6).every(Boolean)) return 'Mon–Fri';
+// Days as English text for CSV files ("Mon-Fri", "Mon Wed Fri"); parseDays reads it back.
+export function daysCode(days) {
+  if (!days || !days.some(Boolean)) return '';
+  if (days.every(Boolean)) return 'daily';
+  if (!days[0] && days.slice(1, 7).every(Boolean)) return 'Mon-Sat';
+  if (!days[0] && !days[6] && days.slice(1, 6).every(Boolean)) return 'Mon-Fri';
   return DAY_NAMES.filter((_, i) => days[i]).join(' ');
 }
 
@@ -164,4 +166,11 @@ export function addDays(dateStr, n) {
 // 450 -> "7.5"
 export function fmtHours(min) {
   return (Math.round((min / 60) * 10) / 10).toFixed(1);
+}
+
+// 935 -> "15:35" (for <input type="time">)
+export function fmtTimeInput(min) {
+  if (min == null) return '';
+  const m = Math.round(min);
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }

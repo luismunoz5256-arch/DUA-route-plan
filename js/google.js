@@ -1,4 +1,5 @@
 // Google Maps Platform calls (Geocoding API + Routes API), made straight from the browser.
+import { t } from './i18n.js';
 
 // Rough box around El Paso to prefer local matches when looking up addresses.
 const EL_PASO_BOUNDS = '31.55,-106.70|32.05,-106.00';
@@ -18,12 +19,12 @@ export async function geocode(apiKey, address) {
       partial: !!r.partial_match,
     };
   }
-  if (data.status === 'ZERO_RESULTS') throw new Error(`Address not found: ${address}`);
-  throw new Error(data.error_message || `Google geocoding error: ${data.status}`);
+  if (data.status === 'ZERO_RESULTS') throw new Error(t('Address not found: {address}', { address }));
+  throw new Error(data.error_message || t('Google address lookup error: {status}', { status: data.status }));
 }
 
 const MATRIX_URL = 'https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix';
-const CHUNK = 10; // 10 x 10 = 100 elements per request, well under Google's per-request limit
+export const CHUNK = 10; // 10 x 10 = 100 elements per request, well under Google's per-request limit
 
 function waypoint(p) {
   return { waypoint: { location: { latLng: { latitude: p.lat, longitude: p.lng } } } };
@@ -60,7 +61,7 @@ export async function routeMatrix(apiKey, origins, destinations, departureTime, 
         try {
           msg = (await res.json()).error?.message || '';
         } catch {}
-        throw new Error(`Google Routes API error ${res.status}${msg ? ': ' + msg : ''}`);
+        throw new Error(t('Google drive-time lookup error {code}', { code: res.status }) + (msg ? ': ' + msg : ''));
       }
       const rows = await res.json();
       for (const r of rows) {
