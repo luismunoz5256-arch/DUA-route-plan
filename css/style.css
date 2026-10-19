@@ -128,3 +128,19 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
   .driver { break-after: page; border: 0; border-top: 6px solid var(--route); }
   .driver li { break-inside: avoid; }
 }
+
+/* v2 additions */
+.sync-status { margin-left: auto; font-size: 0.85rem; color: #e5efe7; }
+label.inline { flex-direction: row; align-items: center; gap: 0.4rem; color: var(--text); }
+.drivers-table { margin-top: 0.8rem; width: auto; }
+.drivers-table input { width: 9rem; }
+.drivers-table input.hours { width: 6rem; }
+.driver li .edit { grid-column: 2 / -1; display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap; }
+.driver li .edit button { padding: 0.1rem 0.5rem; font-size: 0.8rem; }
+.driver li .edit select { font-size: 0.8rem; padding: 0.15rem 0.3rem; }
+.tag.new { background: #dbe8fb; color: #1f4f9c; }
+table.week td.num, table.week th.num { text-align: right; }
+.history-day { border-top: 1px solid var(--line); padding: 0.6rem 0; }
+.history-day table { width: auto; }
+.history-day input[type='time'] { width: 7.5rem; }
+@media print { .driver li .edit { display: none !important; } }

@@ -1,9 +1,12 @@
 import * as store from './store.js';
 import { geocode } from './google.js';
 import { missingPlan, fillMissing, assemble, nextTrafficDeparture } from './matrix.js';
-import { solve } from './solver.js';
+import { solve, summarize, insertStop } from './solver.js';
+import { overtimeStart, laborCost, minutesBefore, weekSummary } from './pay.js';
+import { encodeRoute } from './share.js';
+import { initSync, syncNow } from './sync.js';
 import {
-  esc, toMin, fmtTime, fmtDur, fmtMoney, localDate, weekdayOf, uid,
+  esc, toMin, fmtTime, fmtDur, fmtMoney, fmtHours, localDate, weekdayOf, weekStart, addDays, uid,
   daysLabel, parseDays, parseCsv, toCsv, download, pickFile, DAY_NAMES,
 } from './util.js';
 
@@ -17,12 +20,14 @@ let clients = store.getClients();
 let planDate = localDate();
 let day = null;
 let plan = store.getLastPlan();
+if (plan && !plan.problem) plan = null; // plan saved by an older version
 let map = null;
 let mapLayer = null;
 
 const num = (v, fallback) => (v === '' || v == null || Number.isNaN(Number(v)) ? fallback : Number(v));
 const hasLoc = (c) => c.lat != null && c.lng != null && c.lat !== '' && c.lng !== '';
 const isScheduled = (c, weekday) => c.active !== false && !!(c.days && c.days[weekday]);
+const driverName = (i) => settings.drivers[i] || `Driver ${i + 1}`;
 
 function saveSettings() {
   store.saveSettings(settings);
@@ -41,16 +46,22 @@ function showTab(name) {
   document.querySelectorAll('.panel').forEach((p) => (p.hidden = p.id !== 'tab-' + name));
   if (name === 'plan') {
     renderStops();
+    renderDriverRows();
     if (map) setTimeout(() => map.invalidateSize(), 0);
   }
   if (name === 'clients') renderClients();
+  if (name === 'history') renderHistory();
   if (name === 'settings') renderSettings();
+}
+
+function currentTab() {
+  return document.querySelector('.tab.active')?.dataset.tab || 'plan';
 }
 
 function renderBanner() {
   const msgs = [];
   if (settings.depotLat == null) msgs.push('Set the warehouse location in <a href="#" data-goto="settings">Settings</a> (click <b>Find</b> next to the address).');
-  if (!settings.apiKey) msgs.push('No Google API key yet, so drive times will be rough estimates and addresses must be located by hand. Setup steps are in the README.');
+  if (!settings.apiKey) msgs.push('No Google API key on this computer yet, so drive times will be rough estimates and addresses must be located by hand. Setup steps are in the README.');
   if (!clients.length) msgs.push('Add your clients in the <a href="#" data-goto="clients">Clients</a> tab.');
   const el = $('#setup-banner');
   el.hidden = !msgs.length;
@@ -77,7 +88,7 @@ async function locate(address) {
   return geocode(settings.apiKey, address);
 }
 
-// Make sure traffic drive times exist for these points. Returns a note about where times came from.
+// Make sure traffic drive times exist for these points (looked up once, then saved).
 async function ensureDriveTimes(points, status, { askIfOverLimit = true } = {}) {
   const cache = store.getMatrixCache();
   const need = missingPlan(points, cache);
@@ -145,21 +156,67 @@ async function runSolve(problem, options) {
   }
 }
 
+// ---------- Pay helpers ----------
+
+function payRules() {
+  return {
+    shiftStart: toMin(day?.shiftStart || settings.shiftStart),
+    regDayMin: num(settings.regularHoursPerDay, 8) * 60,
+    regWeekMin: num(settings.regularHoursPerWeek, 40) * 60,
+  };
+}
+
+// Paid minutes each driver already has this week (History, unless typed in for this day).
+function weekBefore(i) {
+  const typed = day?.weekHours?.[i];
+  if (typed != null && typed !== '') return Number(typed) * 60;
+  return minutesBefore(store.getHistory(), planDate, driverName(i));
+}
+
+// Solver problem for one driver count, built from the saved plan.
+function problemFor(p, k) {
+  return {
+    ...p.problem,
+    shiftStart: p.shiftStart,
+    start: p.start,
+    endBy: p.endBy,
+    otAt: p.otAt.slice(0, k),
+    fuelPerMile: p.payRate ? p.fuelPerMile / (p.payRate / 60) : 0,
+    vehicles: k,
+  };
+}
+
+// Times, pay and fuel for one option (driver count) of the plan.
+function evaluate(p, opt) {
+  const s = summarize(opt.orders, problemFor(p, opt.k));
+  const routes = s.routes.map((r) => ({
+    ...r,
+    labor: r.order.length ? laborCost(r.paid, r.ot, p.payRate) : 0,
+    fuel: r.miles * p.fuelPerMile,
+  }));
+  const labor = routes.reduce((a, r) => a + r.labor, 0);
+  const fuel = routes.reduce((a, r) => a + r.fuel, 0);
+  return { ...s, routes, labor, fuel, total: labor + fuel, empty: routes.some((r) => !r.order.length) };
+}
+
 // ---------- Plan tab ----------
 
 function newDay(date) {
   const weekday = weekdayOf(date);
   const selected = {};
   for (const c of clients) if (isScheduled(c, weekday)) selected[c.id] = { priority: false, by: settings.priorityBy, note: '' };
-  return { selected, start: settings.start, endBy: settings.endBy };
+  return { selected, shiftStart: settings.shiftStart, start: settings.start, latestReturn: settings.latestReturn, weekHours: {} };
 }
 
 function loadDay(date) {
   planDate = date;
   day = store.getDay(date) || newDay(date);
+  day.weekHours ||= {};
+  $('#plan-shift').value = day.shiftStart || settings.shiftStart;
   $('#plan-start').value = day.start || settings.start;
-  $('#plan-end').value = day.endBy || settings.endBy;
+  $('#plan-end').value = day.latestReturn || settings.latestReturn;
   renderStops();
+  renderDriverRows();
 }
 
 function saveDay() {
@@ -171,12 +228,24 @@ function renderPlanControls() {
   $('#plan-drivers').innerHTML = Array.from({ length: MAX_DRIVERS }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
   $('#plan-drivers').value = settings.driverCount;
   $('#plan-balance').value = settings.balance;
-  renderDriverNames();
 }
 
-function renderDriverNames() {
-  $('#driver-names').innerHTML = Array.from({ length: settings.driverCount }, (_, i) =>
-    `<label>Driver ${i + 1} <input data-driver="${i}" value="${esc(settings.drivers[i] || `Driver ${i + 1}`)}" /></label>`).join('');
+// One row per driver: name, hours already this week, when overtime starts today.
+function renderDriverRows() {
+  if (!day) return;
+  const rules = payRules();
+  const k = Math.min(MAX_DRIVERS, settings.driverCount + 1);
+  $('#driver-rows').innerHTML = Array.from({ length: k }, (_, i) => {
+    const before = weekBefore(i);
+    const typed = day.weekHours[i];
+    const otAt = overtimeStart({ ...rules, weekBeforeMin: before });
+    const extra = i >= settings.driverCount ? ' <span class="muted small">(only if one more driver)</span>' : '';
+    return `<tr>
+      <td><input data-driver="${i}" value="${esc(driverName(i))}" />${extra}</td>
+      <td><input class="hours" type="number" step="0.25" min="0" data-hours="${i}" value="${typed != null && typed !== '' ? esc(typed) : fmtHours(before)}" /> h</td>
+      <td class="small">${fmtTime(otAt)}</td>
+    </tr>`;
+  }).join('');
 }
 
 function renderStops() {
@@ -192,7 +261,7 @@ function renderStops() {
     .map((c) => {
       const s = day.selected[c.id];
       const unload = num(c.unload, settings.defaultUnload);
-      return `<tr data-id="${c.id}" class="${s ? 'selected' : ''} ${isScheduled(c, weekday) ? 'scheduled' : ''}">
+      return `<tr data-id="${c.id}" class="${s ? 'selected' : ''}">
         <td><input type="checkbox" data-f="on" ${s ? 'checked' : ''} aria-label="Deliver to ${esc(c.name)}" /></td>
         <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ' <span class="tag good">regular today</span>' : ''}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ' <span class="warn-text">⚠ not located</span>'}</div></td>
         <td class="small">${esc(daysLabel(c.days))}</td>
@@ -235,20 +304,28 @@ function onStopEdit(e) {
 }
 
 $('#plan-date').addEventListener('change', (e) => e.target.value && loadDay(e.target.value));
+$('#plan-shift').addEventListener('change', (e) => { day.shiftStart = e.target.value; saveDay(); renderDriverRows(); });
 $('#plan-start').addEventListener('change', (e) => { day.start = e.target.value; saveDay(); });
-$('#plan-end').addEventListener('change', (e) => { day.endBy = e.target.value; saveDay(); });
+$('#plan-end').addEventListener('change', (e) => { day.latestReturn = e.target.value; saveDay(); });
 $('#plan-drivers').addEventListener('change', (e) => {
   settings.driverCount = Number(e.target.value);
   saveSettings();
-  renderDriverNames();
+  renderDriverRows();
 });
 $('#plan-balance').addEventListener('change', (e) => { settings.balance = e.target.value; saveSettings(); });
-$('#driver-names').addEventListener('input', (e) => {
-  const i = e.target.dataset.driver;
-  if (i == null) return;
-  settings.drivers[i] = e.target.value;
-  saveSettings();
-  if (plan) renderResults();
+$('#driver-rows').addEventListener('change', (e) => {
+  const d = e.target.dataset.driver;
+  const h = e.target.dataset.hours;
+  if (d != null) {
+    settings.drivers[d] = e.target.value.trim() || `Driver ${Number(d) + 1}`;
+    saveSettings();
+    if (plan) renderResults();
+  }
+  if (h != null) {
+    day.weekHours[h] = e.target.value;
+    saveDay();
+  }
+  renderDriverRows();
 });
 $('#stop-search').addEventListener('input', renderStops);
 $('#btn-select-scheduled').addEventListener('click', () => {
@@ -265,107 +342,108 @@ $('#btn-select-none').addEventListener('click', () => {
 });
 $('#btn-optimize').addEventListener('click', buildRoutes);
 
+// Locate any clients that have no coordinates yet; returns those still missing.
+async function locateMissing(list, status) {
+  const missing = list.filter((c) => !hasLoc(c));
+  if (missing.length && settings.apiKey) {
+    for (const c of missing) {
+      status(`Finding address for ${c.name}…`);
+      try {
+        const g = await locate(c.address);
+        c.lat = g.lat;
+        c.lng = g.lng;
+      } catch {}
+    }
+    saveClients();
+  }
+  return list.filter((c) => !hasLoc(c));
+}
+
+function stopFromClient(c, sel) {
+  const prio = sel.priority ? toMin(sel.by || settings.priorityBy) : null;
+  const close = toMin(c.close);
+  return {
+    id: c.id, name: c.name, address: c.address, lat: Number(c.lat), lng: Number(c.lng),
+    unload: num(c.unload, settings.defaultUnload), notes: c.notes || '', today: sel.note || '',
+    priority: !!sel.priority, by: sel.priority ? sel.by || settings.priorityBy : '',
+    open: toMin(c.open), due: prio == null ? close : close == null ? prio : Math.min(prio, close),
+  };
+}
+
+// Drive-time tables (minutes and miles) for the warehouse + stops.
+async function tablesFor(depot, stops, status) {
+  const points = [depot, ...stops.map((s) => ({ lat: s.lat, lng: s.lng }))];
+  const cache = await ensureDriveTimes(points, status);
+  const m = assemble(points, cache);
+  return { time: m.time, dist: m.meters.map((row) => row.map((x) => x / 1609.34)), source: { google: m.fromGoogle, estimated: m.estimated } };
+}
+
 async function buildRoutes() {
   const status = (t) => ($('#plan-status').textContent = t);
   if (settings.depotLat == null) return alert('Set the warehouse location in Settings first.');
   const chosen = clients.filter((c) => day.selected[c.id]);
   if (!chosen.length) return alert('Check at least one stop.');
+  const shiftStart = toMin($('#plan-shift').value);
   const start = toMin($('#plan-start').value);
   const endBy = toMin($('#plan-end').value);
-  if (start == null || endBy == null || endBy <= start) return alert('Check the leave and back-by times.');
+  if (shiftStart == null || start == null || endBy == null || endBy <= start || start < shiftStart) {
+    return alert('Check the clock-in, leave and latest-return times.');
+  }
 
   const btn = $('#btn-optimize');
   btn.disabled = true;
   const t0 = performance.now();
   try {
-    // Locate any stops that have no coordinates yet.
-    const missing = chosen.filter((c) => !hasLoc(c));
-    if (missing.length && settings.apiKey) {
-      for (const c of missing) {
-        status(`Finding address for ${c.name}…`);
-        try {
-          const g = await locate(c.address);
-          c.lat = g.lat;
-          c.lng = g.lng;
-        } catch {}
-      }
-      saveClients();
-    }
-    const stillMissing = chosen.filter((c) => !hasLoc(c));
+    const stillMissing = await locateMissing(chosen, status);
     if (stillMissing.length) {
       alert(`These clients have no map location yet. Open them in the Clients tab and click Find (or type the latitude/longitude):\n\n${stillMissing.map((c) => '• ' + c.name).join('\n')}`);
       return;
     }
 
     const depot = { lat: Number(settings.depotLat), lng: Number(settings.depotLng) };
-    const points = [depot, ...chosen.map((c) => ({ lat: Number(c.lat), lng: Number(c.lng) }))];
-    const cache = await ensureDriveTimes(points, status);
-    const m = assemble(points, cache);
-
-    const stops = chosen.map((c) => {
-      const s = day.selected[c.id];
-      const prio = s.priority ? toMin(s.by || settings.priorityBy) : null;
-      const close = toMin(c.close);
-      return {
-        id: c.id, name: c.name, address: c.address, lat: Number(c.lat), lng: Number(c.lng),
-        unload: num(c.unload, settings.defaultUnload), notes: c.notes || '', today: s.note || '',
-        priority: !!s.priority, by: s.priority ? s.by || settings.priorityBy : '',
-        open: toMin(c.open), due: prio == null ? close : close == null ? prio : Math.min(prio, close),
-      };
-    });
-    const problem = {
-      time: m.time,
-      service: [0, ...stops.map((s) => s.unload)],
-      open: [null, ...stops.map((s) => s.open)],
-      due: [null, ...stops.map((s) => s.due)],
-      start,
-      endBy,
-    };
-
-    const k = settings.driverCount;
-    const counts = [...new Set([k - 1, k, k + 1])].filter((x) => x >= 1 && x <= MAX_DRIVERS && (x <= stops.length || x === k));
-    const options = [];
-    for (const vehicles of counts) {
-      status(`Optimizing routes for ${vehicles} driver${vehicles > 1 ? 's' : ''}…`);
-      const r = await runSolve(
-        { ...problem, vehicles },
-        { timeLimitMs: vehicles === k ? 2500 : 1500, weights: { balance: BALANCE[settings.balance] ?? 0.15 } },
-      );
-      const routes = r.routes.map((route) => ({
-        order: route.order,
-        arrivals: route.stops.map((s) => ({ arrive: s.arrive, late: s.late })),
-        finish: route.finish,
-        duration: route.duration,
-        drive: route.drive,
-        miles: legsMeters(route.order, m.meters) / 1609.34,
-        overtime: route.overtime,
-      }));
-      options.push({
-        k: vehicles,
-        routes,
-        totalMinutes: r.totalMinutes,
-        lastFinish: r.lastFinish,
-        lateCount: r.lateStops.length,
-        overtime: r.overtimeMinutes,
-        cost: (r.totalMinutes / 60) * settings.payRate,
-        miles: routes.reduce((s, x) => s + x.miles, 0),
-      });
-    }
+    const stops = chosen.map((c) => stopFromClient(c, day.selected[c.id]));
+    const tables = await tablesFor(depot, stops, status);
+    const rules = payRules();
+    const weekMin = Array.from({ length: MAX_DRIVERS }, (_, i) => weekBefore(i));
 
     plan = {
       date: planDate,
       created: Date.now(),
+      shiftStart,
       start,
       endBy,
-      payRate: settings.payRate,
-      requested: k,
-      view: k,
+      payRate: num(settings.payRate, 14),
+      fuelPerMile: num(settings.fuelPerMile, 0),
+      otAt: weekMin.map((w) => overtimeStart({ ...rules, weekBeforeMin: w })),
+      weekMin,
+      requested: settings.driverCount,
+      view: settings.driverCount,
       depot: { name: settings.depotName, address: settings.depotAddress, lat: depot.lat, lng: depot.lng },
       stops,
-      options,
-      source: { google: m.fromGoogle, estimated: m.estimated, trafficTime: settings.trafficTime },
+      problem: {
+        time: tables.time,
+        dist: tables.dist,
+        service: [0, ...stops.map((s) => s.unload)],
+        open: [null, ...stops.map((s) => s.open)],
+        due: [null, ...stops.map((s) => s.due)],
+      },
+      options: [],
+      source: { ...tables.source, trafficTime: settings.trafficTime },
     };
-    store.saveLastPlan(plan);
+
+    const k = settings.driverCount;
+    const counts = [...new Set([k - 1, k, k + 1])].filter((x) => x >= 1 && x <= MAX_DRIVERS && (x <= stops.length || x === k));
+    for (const vehicles of counts) {
+      status(`Optimizing routes for ${vehicles} driver${vehicles > 1 ? 's' : ''}…`);
+      const r = await runSolve(problemFor(plan, vehicles), {
+        timeLimitMs: vehicles === k ? 2500 : 1500,
+        weights: { balance: BALANCE[settings.balance] ?? 0.15 },
+      });
+      const orders = r.routes.map((x) => x.order);
+      plan.options.push({ k: vehicles, orders, original: orders.map((o) => o.slice()) });
+    }
+    plan.view = bestOption(plan).k;
+    savePlan();
     renderResults();
     status(`Done in ${((performance.now() - t0) / 1000).toFixed(1)} s.`);
     $('#results').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -378,27 +456,39 @@ async function buildRoutes() {
   }
 }
 
-function legsMeters(order, meters) {
-  let prev = 0;
-  let sum = 0;
-  for (const i of order) {
-    sum += meters[prev][i];
-    prev = i;
-  }
-  if (order.length) sum += meters[prev][0];
-  return sum;
+// Saves the plan and records the plan being viewed in History (for weekly hours).
+function savePlan() {
+  store.saveLastPlan(plan);
+  const opt = viewOption();
+  const ev = evaluate(plan, opt);
+  store.saveHistoryDay(plan.date, {
+    drivers: ev.routes
+      .map((r, i) => ({ name: driverName(i), stops: r.order.length, paid: Math.round(r.paid), ot: Math.round(r.ot), miles: Math.round(r.miles * 10) / 10, back: Math.round(r.finish), labor: r.labor, fuel: r.fuel }))
+      .filter((d) => d.stops),
+    shiftStart: plan.shiftStart,
+    stops: plan.stops.length,
+    labor: ev.labor,
+    fuel: ev.fuel,
+    total: ev.total,
+    miles: ev.miles,
+  });
 }
 
 // ---------- Results ----------
 
-function bestOption(p) {
-  const ok = p.options.filter((o) => !o.lateCount && o.overtime < 0.5 && o.routes.every((r) => r.order.length));
-  const pool = ok.length ? ok : p.options;
-  return pool.reduce((a, b) => (b.cost < a.cost - 0.005 ? b : a));
+function isOk(ev) {
+  return !ev.lateStops.length && ev.pastEndMinutes < 0.5 && !ev.empty;
 }
 
-function driverName(i) {
-  return settings.drivers[i] || `Driver ${i + 1}`;
+function bestOption(p) {
+  const evs = p.options.map((o) => ({ o, ev: evaluate(p, o) }));
+  const ok = evs.filter((x) => isOk(x.ev));
+  const pool = ok.length ? ok : evs;
+  return pool.reduce((a, b) => (b.ev.total < a.ev.total - 0.005 ? b : a)).o;
+}
+
+function viewOption() {
+  return plan.options.find((o) => o.k === plan.view) || plan.options[0];
 }
 
 function fmtDateLong(date) {
@@ -413,26 +503,33 @@ function renderResults() {
   }
   $('#results').hidden = false;
   const best = bestOption(plan);
-  const view = plan.options.find((o) => o.k === plan.view) || best;
+  const view = viewOption();
+  const views = plan.options.map((o) => ({ o, ev: evaluate(plan, o) }));
+
+  $('#cost-note').textContent =
+    `Paid from clock-in (${fmtTime(plan.shiftStart)}) until back at the warehouse at ${fmtMoney(plan.payRate)}/h; overtime at 1.5× (${fmtMoney(plan.payRate * 1.5)}/h); ` +
+    `fuel at ${fmtMoney(plan.fuelPerMile)}/mile. Click a row to view that plan.`;
 
   $('#compare-rows').innerHTML =
-    `<tr><th>Drivers</th><th>Back at warehouse</th><th>Last one back</th><th>Paid time</th><th>Labor</th><th>Miles</th><th></th></tr>` +
-    plan.options
-      .map((o) => {
-        const problems = [];
-        if (o.overtime >= 0.5) problems.push(`<span class="tag bad">Past ${fmtTime(plan.endBy)}</span>`);
-        if (o.lateCount) problems.push(`<span class="tag bad">${o.lateCount} late</span>`);
-        if (o.routes.some((r) => !r.order.length)) problems.push('<span class="tag">Not enough stops</span>');
-        if (o === best) problems.unshift('<span class="tag good">Best</span>');
-        const finishes = o.routes.filter((r) => r.order.length).map((r) => fmtTime(r.finish)).join(', ');
+    `<tr><th>Drivers</th><th>Back at warehouse</th><th>Paid hours</th><th>Overtime</th><th>Labor</th><th>Fuel</th><th>Total</th><th></th></tr>` +
+    views
+      .map(({ o, ev }) => {
+        const flags = [];
+        if (o === best) flags.push('<span class="tag good">Best</span>');
+        if (ev.pastEndMinutes >= 0.5) flags.push(`<span class="tag bad">Past ${fmtTime(plan.endBy)}</span>`);
+        if (ev.lateStops.length) flags.push(`<span class="tag bad">${ev.lateStops.length} late</span>`);
+        if (ev.empty) flags.push('<span class="tag">Not enough stops</span>');
+        if (o.edited) flags.push('<span class="tag">Changed by hand</span>');
+        const finishes = ev.routes.filter((r) => r.order.length).map((r) => fmtTime(r.finish)).join(', ');
         return `<tr data-k="${o.k}" class="${o.k === view.k ? 'current' : ''}">
           <td><b>${o.k}</b>${o.k === plan.requested ? ' <span class="muted small">(requested)</span>' : ''}</td>
           <td class="small">${finishes}</td>
-          <td>${fmtTime(o.lastFinish)}</td>
-          <td>${fmtDur(o.totalMinutes)}</td>
-          <td><b>${fmtMoney(o.cost)}</b></td>
-          <td>${o.miles.toFixed(0)}</td>
-          <td>${problems.join(' ')}</td>
+          <td>${fmtHours(ev.paidMinutes)} h</td>
+          <td>${ev.otMinutes >= 0.5 ? `${fmtHours(ev.otMinutes)} h` : '—'}</td>
+          <td>${fmtMoney(ev.labor)}</td>
+          <td>${fmtMoney(ev.fuel)}</td>
+          <td><b>${fmtMoney(ev.total)}</b></td>
+          <td>${flags.join(' ')}</td>
         </tr>`;
       })
       .join('');
@@ -442,16 +539,32 @@ function renderResults() {
     ? `<span class="warn-text">⚠ ${src.estimated} of ${src.google + src.estimated} drive times are rough straight-line estimates${settings.apiKey ? '' : ' (no Google API key)'}. Times may be off.</span>`
     : `Drive times from Google with typical traffic around ${fmtTime(toMin(src.trafficTime))}.`;
 
-  $('#plan-title').textContent = `${fmtDateLong(plan.date)} · ${view.k} driver${view.k > 1 ? 's' : ''}`;
-  renderMap(view);
-  $('#driver-cards').innerHTML = view.routes.map((r, i) => driverCard(r, i)).join('');
+  const ev = views.find((x) => x.o === view).ev;
+  $('#plan-title').textContent = `${fmtDateLong(plan.date)} · ${view.k} driver${view.k > 1 ? 's' : ''} · ${fmtMoney(ev.total)}`;
+  $('#btn-reset-edits').hidden = !view.edited;
+  renderMap(view, ev);
+  $('#driver-cards').innerHTML = ev.routes.map((r, i) => driverCard(r, i, view.k)).join('');
+  renderAddStop();
 }
 
 $('#compare-rows').addEventListener('click', (e) => {
   const tr = e.target.closest('tr[data-k]');
   if (!tr) return;
   plan.view = Number(tr.dataset.k);
-  store.saveLastPlan(plan);
+  savePlan();
+  renderResults();
+});
+
+$('#btn-reset-edits').addEventListener('click', () => {
+  const opt = viewOption();
+  if (!confirm('Put this plan back the way the planner made it?')) return;
+  // Stops added later are not in the original; keep them where they are now.
+  const inOriginal = new Set(opt.original.flat());
+  const added = opt.orders.flat().filter((x) => !inOriginal.has(x));
+  opt.orders = opt.original.map((o) => o.slice());
+  for (const s of added) opt.orders = insertStop(opt.orders, problemFor(plan, opt.k), s);
+  opt.edited = false;
+  savePlan();
   renderResults();
 });
 
@@ -478,33 +591,61 @@ function routeLinks(r) {
   return mapsLinks(places);
 }
 
-function driverCard(r, i) {
+// Link to the phone page for one driver (the route rides inside the link).
+function phoneLink(r, i) {
+  const data = {
+    driver: driverName(i),
+    date: fmtDateLong(plan.date),
+    leave: Math.round(plan.start),
+    back: Math.round(r.finish),
+    depot: { n: plan.depot.name, a: plan.depot.address },
+    stops: r.order.map((idx, n) => {
+      const s = plan.stops[idx - 1];
+      return {
+        n: s.name,
+        a: stopPlace(s),
+        t: Math.round(r.stops[n].arrive),
+        p: s.priority ? toMin(s.by) : 0,
+        o: [s.notes, s.today].filter(Boolean).join(' · '),
+      };
+    }),
+  };
+  return new URL('driver.html', location.href).href.split('#')[0] + '#' + encodeRoute(data);
+}
+
+function driverCard(r, i, k) {
   const color = COLORS[i % COLORS.length];
   if (!r.order.length) {
-    return `<div class="card driver" style="--route:${color}"><h3>${esc(driverName(i))}</h3><p class="muted">No stops needed for this driver.</p></div>`;
+    return `<div class="card driver" style="--route:${color}"><h3>${esc(driverName(i))}</h3><p class="muted">No stops for this driver.</p></div>`;
   }
-  const cost = (r.duration / 60) * plan.payRate;
+  const moveOptions = Array.from({ length: k }, (_, j) => (j === i ? '' : `<option value="${j}">${esc(driverName(j))}</option>`)).join('');
   const rows = r.order
     .map((idx, n) => {
       const s = plan.stops[idx - 1];
-      const a = r.arrivals[n];
+      const a = r.stops[n];
       const tags = [];
       if (s.priority) tags.push(`<span class="tag prio">Priority · by ${fmtTime(toMin(s.by))}</span>`);
       if (a.late > 0.5) tags.push(`<span class="tag bad">${Math.round(a.late)} min late</span>`);
+      if (s.added) tags.push('<span class="tag new">Added</span>');
       const notes = [`Unload ${s.unload} min`, s.notes, s.today].filter(Boolean).map(esc).join(' · ');
       return `<li><span class="num">${n + 1}</span><span class="time">${fmtTime(a.arrive)}</span>
-        <div><div class="who">${esc(s.name)} ${tags.join(' ')}</div><div class="addr">${esc(s.address)}</div><div class="note">${notes}</div></div></li>`;
+        <div><div class="who">${esc(s.name)} ${tags.join(' ')}</div><div class="addr">${esc(s.address)}</div><div class="note">${notes}</div></div>
+        <div class="edit noprint" data-r="${i}" data-n="${n}">
+          <button class="secondary" data-move="up" ${n === 0 ? 'disabled' : ''} title="Earlier">▲</button>
+          <button class="secondary" data-move="down" ${n === r.order.length - 1 ? 'disabled' : ''} title="Later">▼</button>
+          ${k > 1 ? `<select data-move="to" aria-label="Move to another driver"><option value="">Move to…</option>${moveOptions}</select>` : ''}
+        </div></li>`;
     })
     .join('');
   const links = routeLinks(r);
   return `<div class="card driver" style="--route:${color}">
     <div class="row between"><h3>${esc(driverName(i))}</h3>
-      ${r.overtime >= 0.5 ? `<span class="tag bad">${Math.round(r.overtime)} min past ${fmtTime(plan.endBy)}</span>` : `<span class="tag good">Back ${fmtTime(r.finish)}</span>`}</div>
+      ${r.pastEnd >= 0.5 ? `<span class="tag bad">${Math.round(r.pastEnd)} min past ${fmtTime(plan.endBy)}</span>` : r.ot >= 0.5 ? `<span class="tag prio">Back ${fmtTime(r.finish)} · ${Math.round(r.ot)} min OT</span>` : `<span class="tag good">Back ${fmtTime(r.finish)}</span>`}</div>
     <div class="stats">
       <span>${esc(fmtDateLong(plan.date))}</span>
       <span>Stops <b>${r.order.length}</b></span>
-      <span>Paid <b>${fmtDur(r.duration)} · ${fmtMoney(cost)}</b></span>
-      <span>Driving <b>${fmtDur(r.drive)} · ${r.miles.toFixed(0)} mi</b></span>
+      <span>Paid <b>${fmtDur(r.paid)}${r.ot >= 0.5 ? ` (${fmtDur(r.ot)} OT)` : ''} · ${fmtMoney(r.labor)}</b></span>
+      <span>Driving <b>${fmtDur(r.drive)} · ${r.miles.toFixed(0)} mi · ${fmtMoney(r.fuel)} fuel</b></span>
     </div>
     <ol>
       <li class="depot"><span class="num">W</span><span class="time">${fmtTime(plan.start)}</span><div><div class="who">Leave ${esc(plan.depot.name)}</div></div></li>
@@ -512,39 +653,146 @@ function driverCard(r, i) {
       <li class="depot"><span class="num">W</span><span class="time">${fmtTime(r.finish)}</span><div><div class="who">Back at ${esc(plan.depot.name)}</div></div></li>
     </ol>
     <div class="actions">
-      ${links.map((l, n) => `<a class="secondary" href="${esc(l)}" target="_blank" rel="noopener">Open in Google Maps${links.length > 1 ? ` (part ${n + 1})` : ''}</a>`).join(' · ')}
+      <a class="secondary" href="${esc(phoneLink(r, i))}" target="_blank" rel="noopener">Driver phone page</a> ·
+      <button class="secondary" data-copylink="${i}">Copy phone link</button>
       <button class="secondary" data-copy="${i}">Copy for text</button>
+      <span class="small">${links.map((l, n) => `<a href="${esc(l)}" target="_blank" rel="noopener">Google Maps${links.length > 1 ? ` ${n + 1}` : ''}</a>`).join(' · ')}</span>
     </div>
   </div>`;
 }
 
-$('#driver-cards').addEventListener('click', async (e) => {
-  const b = e.target.closest('[data-copy]');
-  if (!b) return;
-  const view = plan.options.find((o) => o.k === plan.view) || bestOption(plan);
-  const i = Number(b.dataset.copy);
-  const r = view.routes[i];
-  const lines = [`${driverName(i)} – ${fmtDateLong(plan.date)}`, `Leave ${plan.depot.name} ${fmtTime(plan.start)}`];
-  r.order.forEach((idx, n) => {
-    const s = plan.stops[idx - 1];
-    const extra = [s.priority ? `PRIORITY by ${fmtTime(toMin(s.by))}` : '', s.notes, s.today].filter(Boolean).join(' – ');
-    lines.push(`${n + 1}. ${fmtTime(r.arrivals[n].arrive)} ${s.name}, ${s.address}${extra ? ` (${extra})` : ''}`);
-  });
-  lines.push(`Back at ${plan.depot.name} about ${fmtTime(r.finish)}`);
-  routeLinks(r).forEach((l, n, all) => lines.push(`Map${all.length > 1 ? ` part ${n + 1}` : ''}: ${l}`));
-  const text = lines.join('\n');
+async function copyText(text, btn, label) {
   try {
     await navigator.clipboard.writeText(text);
-    b.textContent = 'Copied!';
-    setTimeout(() => (b.textContent = 'Copy for text'), 1500);
+    btn.textContent = 'Copied!';
+    setTimeout(() => (btn.textContent = label), 1500);
   } catch {
-    prompt('Copy this text:', text);
+    prompt('Copy this:', text);
+  }
+}
+
+$('#driver-cards').addEventListener('click', (e) => {
+  const view = viewOption();
+  const ev = evaluate(plan, view);
+  const linkBtn = e.target.closest('[data-copylink]');
+  if (linkBtn) {
+    const i = Number(linkBtn.dataset.copylink);
+    copyText(phoneLink(ev.routes[i], i), linkBtn, 'Copy phone link');
+    return;
+  }
+  const b = e.target.closest('[data-copy]');
+  if (b) {
+    const i = Number(b.dataset.copy);
+    const r = ev.routes[i];
+    const lines = [`${driverName(i)} – ${fmtDateLong(plan.date)}`, `Leave ${plan.depot.name} ${fmtTime(plan.start)}`];
+    r.order.forEach((idx, n) => {
+      const s = plan.stops[idx - 1];
+      const extra = [s.priority ? `PRIORITY by ${fmtTime(toMin(s.by))}` : '', s.notes, s.today].filter(Boolean).join(' – ');
+      lines.push(`${n + 1}. ${fmtTime(r.stops[n].arrive)} ${s.name}, ${s.address}${extra ? ` (${extra})` : ''}`);
+    });
+    lines.push(`Back at ${plan.depot.name} about ${fmtTime(r.finish)}`);
+    lines.push(`Route on your phone: ${phoneLink(r, i)}`);
+    copyText(lines.join('\n'), b, 'Copy for text');
+    return;
+  }
+  const mv = e.target.closest('button[data-move]');
+  if (mv) {
+    const box = mv.closest('.edit');
+    moveStop(Number(box.dataset.r), Number(box.dataset.n), mv.dataset.move === 'up' ? -1 : 1);
+  }
+});
+
+$('#driver-cards').addEventListener('change', (e) => {
+  const sel = e.target.closest('select[data-move="to"]');
+  if (!sel || sel.value === '') return;
+  const box = sel.closest('.edit');
+  giveStop(Number(box.dataset.r), Number(box.dataset.n), Number(sel.value));
+});
+
+function afterEdit(opt) {
+  opt.edited = true;
+  savePlan();
+  renderResults();
+}
+
+function moveStop(r, n, dir) {
+  const opt = viewOption();
+  const route = opt.orders[r];
+  const m = n + dir;
+  if (m < 0 || m >= route.length) return;
+  [route[n], route[m]] = [route[m], route[n]];
+  afterEdit(opt);
+}
+
+// Hand a stop to another driver, at the cheapest spot in their route.
+function giveStop(r, n, to) {
+  const opt = viewOption();
+  const [stop] = opt.orders[r].splice(n, 1);
+  const p = problemFor(plan, opt.k);
+  const only = opt.orders.map((_, j) => (j === to ? 0 : Infinity));
+  opt.orders = insertStop(opt.orders, p, stop, only);
+  afterEdit(opt);
+}
+
+// ---------- Add a late order ----------
+
+function renderAddStop() {
+  const inPlan = new Set(plan.stops.map((s) => s.id));
+  const list = clients.filter((c) => c.active !== false && !inPlan.has(c.id)).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  const sel = $('#add-client');
+  const keep = sel.value;
+  sel.innerHTML = `<option value="">Choose a client…</option>` + list.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  sel.value = list.some((c) => c.id === keep) ? keep : '';
+  if (!$('#add-by').value) $('#add-by').value = settings.priorityBy;
+}
+
+$('#btn-add-stop').addEventListener('click', async (e) => {
+  const c = clients.find((x) => x.id === $('#add-client').value);
+  if (!c) return alert('Choose a client to add.');
+  const btn = e.target;
+  btn.disabled = true;
+  const status = (t) => (btn.textContent = t || 'Add to routes');
+  try {
+    if ((await locateMissing([c], status)).length) return alert(`${c.name} has no map location yet. Open it in the Clients tab and click Find.`);
+    const sel = { priority: $('#add-priority').checked, by: $('#add-by').value, note: '' };
+    const stop = { ...stopFromClient(c, sel), added: true };
+    const stops = [...plan.stops, stop];
+    const tables = await tablesFor(plan.depot, stops, status);
+    plan.stops = stops;
+    plan.problem = {
+      time: tables.time,
+      dist: tables.dist,
+      service: [...plan.problem.service, stop.unload],
+      open: [...plan.problem.open, stop.open],
+      due: [...plan.problem.due, stop.due],
+    };
+    plan.source = { ...plan.source, ...tables.source };
+    const idx = stops.length;
+    const nowMin = plan.date === localDate() ? new Date().getHours() * 60 + new Date().getMinutes() : -1;
+    for (const opt of plan.options) {
+      const p = problemFor(plan, opt.k);
+      // Stops whose planned arrival has passed are treated as done.
+      const ev = summarize(opt.orders, p);
+      const minPos = ev.routes.map((r) => r.stops.filter((s) => s.arrive <= nowMin).length);
+      opt.orders = insertStop(opt.orders, p, idx, minPos);
+    }
+    day.selected[c.id] = sel;
+    saveDay();
+    savePlan();
+    renderResults();
+    renderStops();
+    $('#add-priority').checked = false;
+  } catch (err) {
+    alert('Could not add the stop: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    status('');
   }
 });
 
 $('#btn-print').addEventListener('click', () => window.print());
 
-function renderMap(view) {
+function renderMap(view, ev) {
   const el = $('#map');
   if (!window.L) {
     el.hidden = true;
@@ -564,7 +812,7 @@ function renderMap(view) {
   L.marker(d, { icon: L.divIcon({ className: '', html: '<div class="pin depot">W</div>', iconSize: [26, 26] }), zIndexOffset: 1000 })
     .bindPopup(esc(plan.depot.name))
     .addTo(mapLayer);
-  view.routes.forEach((r, i) => {
+  ev.routes.forEach((r, i) => {
     const color = COLORS[i % COLORS.length];
     const line = [d];
     r.order.forEach((idx, n) => {
@@ -573,7 +821,7 @@ function renderMap(view) {
       line.push(ll);
       pts.push(ll);
       L.marker(ll, { icon: L.divIcon({ className: '', html: `<div class="pin" style="background:${color}">${n + 1}</div>`, iconSize: [26, 26] }) })
-        .bindPopup(`<b>${esc(s.name)}</b><br>${esc(driverName(i))} · stop ${n + 1}<br>${fmtTime(r.arrivals[n].arrive)}`)
+        .bindPopup(`<b>${esc(s.name)}</b><br>${esc(driverName(i))} · stop ${n + 1}<br>${fmtTime(r.stops[n].arrive)}`)
         .addTo(mapLayer);
     });
     line.push(d);
@@ -584,6 +832,96 @@ function renderMap(view) {
     map.fitBounds(L.latLngBounds(pts), { padding: [30, 30], maxZoom: 14 });
   }, 0);
 }
+
+// ---------- History tab ----------
+
+let historyWeek = weekStart(localDate());
+
+function renderHistory() {
+  const history = store.getHistory();
+  const rules = payRules();
+  const rate = num(settings.payRate, 14);
+  $('#week-of').value = historyWeek;
+  const rows = weekSummary(history, historyWeek, { ...rules, rate });
+  const dayHead = Array.from({ length: 7 }, (_, i) => {
+    const d = addDays(historyWeek, i);
+    return `<th class="num">${DAY_NAMES[weekdayOf(d)]} ${Number(d.slice(8))}</th>`;
+  }).join('');
+  $('#week-rows').innerHTML =
+    `<tr><th>Driver</th>${dayHead}<th class="num">Total</th><th class="num">Overtime</th><th class="num">Est. pay</th></tr>` +
+    (rows.length
+      ? rows
+          .map((r) => {
+            const over = r.total > rules.regWeekMin;
+            return `<tr><td><b>${esc(r.name)}</b></td>${r.days.map((m) => `<td class="num">${m == null ? '' : fmtHours(m)}</td>`).join('')}
+            <td class="num ${over ? 'bad-text' : ''}"><b>${fmtHours(r.total)}</b></td>
+            <td class="num">${r.ot >= 0.5 ? fmtHours(r.ot) : '—'}</td><td class="num">${fmtMoney(r.pay)}</td></tr>`;
+          })
+          .join('')
+      : '<tr><td colspan="11" class="muted">No routes saved for this week.</td></tr>');
+
+  const dates = Object.keys(history).sort().reverse();
+  $('#history-days').innerHTML = dates.length
+    ? dates
+        .slice(0, 60)
+        .map((date) => {
+          const h = history[date];
+          return `<div class="history-day" data-date="${date}">
+            <div class="row wrap between"><b>${esc(fmtDateLong(date))}</b>
+              <span class="small">${h.stops} stops · ${Math.round(h.miles || 0)} mi · labor ${fmtMoney(h.labor || 0)} · fuel ${fmtMoney(h.fuel || 0)} · <b>${fmtMoney(h.total || 0)}</b>
+              <button class="link danger" data-del="${date}">Delete</button></span></div>
+            <table><tbody>${(h.drivers || [])
+              .map((d, i) => `<tr><td>${esc(d.name)}</td><td class="small">${d.stops} stops</td>
+                <td><label class="inline small">Back <input type="time" data-back="${i}" value="${fmtTimeInput(d.back)}" /></label></td>
+                <td class="small">${fmtHours(d.paid)} h${d.ot ? ` (${fmtHours(d.ot)} OT)` : ''}</td></tr>`)
+              .join('')}</tbody></table>
+          </div>`;
+        })
+        .join('')
+    : '<p class="muted">Nothing yet. Every plan you build is saved here under its date.</p>';
+}
+
+function fmtTimeInput(min) {
+  if (min == null) return '';
+  const m = Math.round(min);
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+$('#week-of').addEventListener('change', (e) => {
+  if (!e.target.value) return;
+  historyWeek = weekStart(e.target.value);
+  renderHistory();
+});
+$('#btn-week-prev').addEventListener('click', () => { historyWeek = addDays(historyWeek, -7); renderHistory(); });
+$('#btn-week-next').addEventListener('click', () => { historyWeek = addDays(historyWeek, 7); renderHistory(); });
+
+// Correct a driver's actual return time; pay for that day is recalculated.
+$('#history-days').addEventListener('change', (e) => {
+  const input = e.target.closest('[data-back]');
+  if (!input) return;
+  const date = input.closest('[data-date]').dataset.date;
+  const h = store.getHistory()[date];
+  const d = h.drivers[Number(input.dataset.back)];
+  const back = toMin(input.value);
+  if (back == null) return;
+  const rules = payRules();
+  const shift = h.shiftStart ?? rules.shiftStart;
+  d.back = back;
+  d.paid = Math.max(0, back - shift);
+  const otAt = overtimeStart({ ...rules, shiftStart: shift, weekBeforeMin: minutesBefore(store.getHistory(), date, d.name) });
+  d.ot = Math.max(0, Math.min(d.paid, back - otAt));
+  d.labor = laborCost(d.paid, d.ot, num(settings.payRate, 14));
+  h.labor = h.drivers.reduce((a, x) => a + (x.labor || 0), 0);
+  h.total = h.labor + (h.fuel || 0);
+  store.saveHistoryDay(date, h);
+  renderHistory();
+});
+$('#history-days').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-del]');
+  if (!b || !confirm(`Delete the saved routes for ${fmtDateLong(b.dataset.del)}?`)) return;
+  store.deleteHistoryDay(b.dataset.del);
+  renderHistory();
+});
 
 // ---------- Clients tab ----------
 
@@ -790,21 +1128,35 @@ $('#btn-import-csv').addEventListener('click', async () => {
 // ---------- Settings tab ----------
 
 const sform = $('#settings-form');
-const SETTING_FIELDS = ['depotName', 'depotAddress', 'depotLat', 'depotLng', 'start', 'endBy', 'payRate', 'defaultUnload', 'priorityBy', 'apiKey', 'trafficTime', 'monthlyElementLimit', 'monthlyGeocodeLimit'];
-const NUMERIC = new Set(['depotLat', 'depotLng', 'payRate', 'defaultUnload', 'monthlyElementLimit', 'monthlyGeocodeLimit']);
+const SETTING_FIELDS = [
+  'depotName', 'depotAddress', 'depotLat', 'depotLng', 'shiftStart', 'start', 'latestReturn', 'payRate',
+  'regularHoursPerDay', 'regularHoursPerWeek', 'fuelPerMile', 'defaultUnload', 'priorityBy', 'apiKey',
+  'trafficTime', 'monthlyElementLimit', 'monthlyGeocodeLimit', 'syncUrl', 'syncKey',
+];
+const NUMERIC = new Set(['depotLat', 'depotLng', 'payRate', 'regularHoursPerDay', 'regularHoursPerWeek', 'fuelPerMile', 'defaultUnload', 'monthlyElementLimit', 'monthlyGeocodeLimit']);
 
 function renderSettings() {
   for (const f of SETTING_FIELDS) sform.elements[f].value = settings[f] ?? '';
   const u = store.getUsage();
   $('#usage-line').textContent =
     `This month: ${u.elements} of ${settings.monthlyElementLimit} drive-time lookups and ${u.geocodes} of ${settings.monthlyGeocodeLimit} address lookups used (counted by this browser).`;
-  $('#matrix-line').textContent = `${Object.keys(store.getMatrixCache()).length} drive times saved in this browser. Daily planning reuses them, so it normally makes no Google requests.`;
+  $('#matrix-line').textContent = `${Object.keys(store.getMatrixCache()).length} drive times saved. Daily planning reuses them, so it normally makes no Google requests.`;
+  const sync = store.getSyncState();
+  $('#sync-line').innerHTML = !settings.syncUrl
+    ? 'Not set up.'
+    : sync.error
+      ? `<span class="bad-text">Last sync failed: ${esc(sync.error)}</span>`
+      : sync.last
+        ? `Last synced ${new Date(sync.last).toLocaleString()}.`
+        : 'Not synced yet.';
 }
 
-$('#btn-show-key').addEventListener('click', (e) => {
-  const input = sform.elements.apiKey;
+sform.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-reveal]');
+  if (!b) return;
+  const input = sform.elements[b.dataset.reveal];
   input.type = input.type === 'password' ? 'text' : 'password';
-  e.target.textContent = input.type === 'password' ? 'Show' : 'Hide';
+  b.textContent = input.type === 'password' ? 'Show' : 'Hide';
 });
 
 $('#btn-locate-depot').addEventListener('click', async () => {
@@ -819,9 +1171,24 @@ sform.addEventListener('submit', async (e) => {
   e.preventDefault();
   const el = sform.elements;
   el.apiKey.value = el.apiKey.value.trim();
+  el.syncUrl.value = el.syncUrl.value.trim();
   if (el.depotLat.value === '' && el.apiKey.value) {
     settings.apiKey = el.apiKey.value;
     await locateInto(sform, 'depotAddress', 'depotLat', 'depotLng', $('#settings-saved'));
+  }
+  const syncChanged = el.syncUrl.value !== settings.syncUrl || el.syncKey.value !== settings.syncKey;
+  if (syncChanged && el.syncUrl.value) {
+    // Connecting to the shared sheet: save only the connection, then load what's shared.
+    settings.syncUrl = el.syncUrl.value;
+    settings.syncKey = el.syncKey.value;
+    settings.apiKey = el.apiKey.value;
+    store.setSyncState({ last: null, error: '' });
+    saveSettings();
+    await syncNow();
+    reloadFromStore();
+    renderSettings();
+    $('#settings-saved').textContent = store.getSyncState().error ? 'Could not connect — check the URL and passcode.' : 'Connected. Shared clients and settings loaded.';
+    return;
   }
   for (const f of SETTING_FIELDS) {
     const v = el[f].value;
@@ -829,7 +1196,14 @@ sform.addEventListener('submit', async (e) => {
   }
   saveSettings();
   renderSettings();
+  renderDriverRows();
   $('#settings-saved').textContent = settings.depotLat == null ? 'Saved — but the warehouse still has no location.' : 'Saved.';
+});
+
+$('#btn-sync-now').addEventListener('click', async () => {
+  if (!settings.syncUrl || !settings.syncKey) return alert('Enter the Sheet web app URL and passcode, then click Save settings.');
+  await syncNow();
+  renderSettings();
 });
 
 $('#btn-preload').addEventListener('click', async (e) => {
@@ -866,17 +1240,26 @@ $('#btn-restore').addEventListener('click', async () => {
     const data = JSON.parse(text);
     if (!confirm(`Replace your clients and settings with the backup from ${data.exported?.slice(0, 10) || 'file'}?`)) return;
     store.importBackup(data);
-    settings = store.getSettings();
-    clients = store.getClients();
-    renderSettings();
-    renderPlanControls();
-    loadDay(planDate);
-    renderBanner();
+    reloadFromStore();
     alert('Backup restored.');
   } catch (err) {
     alert('Could not restore: ' + err.message);
   }
 });
+
+// Re-read everything after a restore or a sync brought in changes.
+function reloadFromStore() {
+  settings = store.getSettings();
+  clients = store.getClients();
+  renderPlanControls();
+  renderBanner();
+  const tab = currentTab();
+  if (tab === 'settings') renderSettings();
+  else if (tab === 'clients') renderClients();
+  else if (tab === 'history') renderHistory();
+  renderStops();
+  renderDriverRows();
+}
 
 // ---------- Start ----------
 
@@ -884,3 +1267,7 @@ renderPlanControls();
 loadDay(planDate);
 renderBanner();
 renderResults();
+initSync({
+  remoteChanged: reloadFromStore,
+  status: (t) => ($('#sync-status').textContent = t),
+});

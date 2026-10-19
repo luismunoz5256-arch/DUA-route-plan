@@ -1,16 +1,20 @@
 // Route optimizer: splits stops across drivers and orders each route.
 //
-// Problem shape (all times in minutes; index 0 is the warehouse, stops are 1..n):
+// Problem shape (all times in minutes after midnight; index 0 is the warehouse, stops are 1..n):
 //   time[i][j]   drive minutes from i to j
+//   dist[i][j]   miles from i to j (optional, for fuel cost)
 //   service[i]   unload minutes at stop i
-//   open[i]      earliest arrival (minutes after midnight) or null
+//   open[i]      earliest arrival or null
 //   due[i]       latest arrival (priority "deliver by" / client closing) or null
+//   shiftStart   when drivers clock in (paid from here; defaults to start)
 //   start        departure time from the warehouse
-//   endBy        time every driver should be back
+//   endBy        hard latest return time
+//   otAt[r]      time after which driver r is on overtime (1.5x pay); optional
+//   fuelPerMile  fuel cost per mile, expressed in minutes of regular pay
 //   vehicles     number of drivers
 //
-// Objective (lower is better):
-//   total paid minutes (leave warehouse -> back at warehouse, summed over drivers)
+// Objective, in minutes of regular pay (lower is better):
+//   sum over drivers used: (back - shiftStart) + 0.5 x overtime minutes + fuel
 //   + heavy penalty per minute a stop is late or a driver is back after endBy
 //   + balance weight x (latest finish - earliest finish)
 //   + penalty for a driver with no stops
@@ -18,7 +22,7 @@
 // Search: ruin-and-recreate (remove a few stops, re-insert them at the cheapest
 // spots) with simulated-annealing acceptance, then a 2-opt polish.
 
-export const DEFAULT_WEIGHTS = { late: 100, overtime: 100, balance: 0.15, empty: 500 };
+export const DEFAULT_WEIGHTS = { late: 100, pastEnd: 100, balance: 0.15, empty: 500 };
 
 export function makeRng(seed) {
   let a = seed >>> 0;
@@ -31,11 +35,16 @@ export function makeRng(seed) {
   };
 }
 
-// Full timeline of one route, used for display.
-export function simulateRoute(route, p) {
+const shiftStartOf = (p) => p.shiftStart ?? p.start;
+const otAtOf = (p, r) => (p.otAt && p.otAt[r] != null ? p.otAt[r] : Infinity);
+const miles = (p, i, j) => (p.dist ? p.dist[i][j] : 0);
+
+// Full timeline of one route (driven by driver r), used for display and pay.
+export function simulateRoute(route, p, r = 0) {
   let t = p.start;
   let prev = 0;
   let drive = 0;
+  let dist = 0;
   let wait = 0;
   let late = 0;
   const stops = [];
@@ -43,6 +52,7 @@ export function simulateRoute(route, p) {
     const leg = p.time[prev][i];
     t += leg;
     drive += leg;
+    dist += miles(p, prev, i);
     if (p.open[i] != null && t < p.open[i]) {
       wait += p.open[i] - t;
       t = p.open[i];
@@ -58,23 +68,29 @@ export function simulateRoute(route, p) {
     returnDrive = p.time[prev][0];
     t += returnDrive;
     drive += returnDrive;
+    dist += miles(p, prev, 0);
   }
   const finish = route.length ? t : p.start;
+  const paid = route.length ? finish - shiftStartOf(p) : 0;
+  const ot = route.length ? Math.min(paid, Math.max(0, finish - otAtOf(p, r))) : 0;
   return {
     stops,
     finish,
-    duration: finish - p.start,
+    duration: route.length ? finish - p.start : 0,
+    paid,
+    ot,
+    miles: dist,
     drive,
     returnDrive,
     wait,
     late,
-    overtime: Math.max(0, finish - p.endBy),
+    pastEnd: Math.max(0, finish - p.endBy),
   };
 }
 
-// Cost and finish time of `route` with stop `ins` inserted before position `pos`
+// Cost and finish time of driver r's `route` with stop `ins` inserted before position `pos`
 // (pass ins = -1 to evaluate the route as-is). Allocation-free for the hot loop.
-function routeEval(route, p, w, ins, pos, out) {
+function routeEval(route, p, w, ins, pos, out, r) {
   const len = route.length + (ins >= 0 ? 1 : 0);
   if (len === 0) {
     out.cost = 0;
@@ -84,11 +100,13 @@ function routeEval(route, p, w, ins, pos, out) {
   let t = p.start;
   let prev = 0;
   let late = 0;
-  for (let k = 0, r = 0; k < len; k++) {
+  let dist = 0;
+  for (let k = 0, x = 0; k < len; k++) {
     let i;
     if (ins >= 0 && k === pos) i = ins;
-    else i = route[r++];
+    else i = route[x++];
     t += p.time[prev][i];
+    if (p.dist) dist += p.dist[prev][i];
     const o = p.open[i];
     if (o != null && t < o) t = o;
     const d = p.due[i];
@@ -97,8 +115,12 @@ function routeEval(route, p, w, ins, pos, out) {
     prev = i;
   }
   t += p.time[prev][0];
-  const overtime = t > p.endBy ? t - p.endBy : 0;
-  out.cost = t - p.start + w.late * late + w.overtime * overtime;
+  if (p.dist) dist += p.dist[prev][0];
+  const pastEnd = t > p.endBy ? t - p.endBy : 0;
+  const otAt = otAtOf(p, r);
+  const paid = t - shiftStartOf(p);
+  const ot = t > otAt ? Math.min(paid, t - otAt) : 0;
+  out.cost = paid + 0.5 * ot + (p.fuelPerMile || 0) * dist + w.late * late + w.pastEnd * pastEnd;
   out.finish = t;
   return out;
 }
@@ -114,7 +136,7 @@ class State {
     for (let r = 0; r < routes.length; r++) this.refresh(r, tmp);
   }
   refresh(r, tmp = {}) {
-    routeEval(this.routes[r], this.p, this.w, -1, 0, tmp);
+    routeEval(this.routes[r], this.p, this.w, -1, 0, tmp, r);
     this.cost[r] = tmp.cost;
     this.finish[r] = tmp.finish;
   }
@@ -176,7 +198,7 @@ function insertAll(state, stops, rng, noise) {
       const route = state.routes[r];
       const emptyBonus = route.length ? 0 : w.empty;
       for (let pos = 0; pos <= route.length; pos++) {
-        routeEval(route, p, w, s, pos, tmp);
+        routeEval(route, p, w, s, pos, tmp, r);
         let delta =
           tmp.cost - state.cost[r] + w.balance * (spreadWith(state, r, tmp.finish) - curSpread) - emptyBonus;
         if (noise) delta *= 1 + noise * (rng() - 0.5);
@@ -255,7 +277,7 @@ function polish(state) {
       for (let i = 0; i < route.length - 1; i++) {
         for (let j = i + 1; j < route.length; j++) {
           const cand = route.slice(0, i).concat(route.slice(i, j + 1).reverse(), route.slice(j + 1));
-          routeEval(cand, p, w, -1, 0, tmp);
+          routeEval(cand, p, w, -1, 0, tmp, r);
           if (tmp.cost < state.cost[r] - 1e-9) {
             const before = state.total();
             const old = [route, state.cost[r], state.finish[r]];
@@ -319,19 +341,49 @@ export function solve(problem, options = {}) {
   polish(best);
   bestCost = best.total();
 
-  const routes = best.routes.map((route) => ({ order: route.slice(), ...simulateRoute(route, p) }));
-  const used = routes.filter((r) => r.order.length);
-  const finishes = used.map((r) => r.finish);
+  return { ...summarize(best.routes, p), objective: bestCost, iterations: iter, ms: Math.round(now() - t0) };
+}
+
+// Timelines and totals for a set of routes (also used after manual edits).
+export function summarize(orders, p) {
+  const routes = orders.map((route, r) => ({ order: route.slice(), ...simulateRoute(route, p, r) }));
+  const finishes = routes.filter((r) => r.order.length).map((r) => r.finish);
   return {
     routes,
-    objective: bestCost,
     totalMinutes: routes.reduce((s, r) => s + r.duration, 0),
+    paidMinutes: routes.reduce((s, r) => s + r.paid, 0),
+    otMinutes: routes.reduce((s, r) => s + r.ot, 0),
+    miles: routes.reduce((s, r) => s + r.miles, 0),
     totalDrive: routes.reduce((s, r) => s + r.drive, 0),
     lastFinish: finishes.length ? Math.max(...finishes) : p.start,
     firstFinish: finishes.length ? Math.min(...finishes) : p.start,
     lateStops: routes.flatMap((r) => r.stops.filter((s) => s.late > 0.5).map((s) => s.stop)),
-    overtimeMinutes: routes.reduce((s, r) => s + r.overtime, 0),
-    iterations: iter,
-    ms: Math.round(now() - t0),
+    pastEndMinutes: routes.reduce((s, r) => s + r.pastEnd, 0),
   };
+}
+
+// Add one stop at its cheapest spot without reshuffling anything else.
+// minPos[r] = first allowed position in route r (stops before it are already done);
+// Infinity keeps the stop out of route r entirely.
+export function insertStop(orders, p, stop, minPos = [], weights = {}) {
+  const w = { ...DEFAULT_WEIGHTS, ...weights };
+  const tmp = {};
+  let best = Infinity;
+  let bestR = 0;
+  let bestPos = 0;
+  orders.forEach((route, r) => {
+    if (minPos[r] === Infinity) return;
+    const base = routeEval(route, p, w, -1, 0, tmp, r).cost;
+    for (let pos = Math.min(minPos[r] || 0, route.length); pos <= route.length; pos++) {
+      const delta = routeEval(route, p, w, stop, pos, tmp, r).cost - base;
+      if (delta < best) {
+        best = delta;
+        bestR = r;
+        bestPos = pos;
+      }
+    }
+  });
+  const out = orders.map((r) => r.slice());
+  out[bestR].splice(bestPos, 0, stop);
+  return out;
 }

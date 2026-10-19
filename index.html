@@ -14,9 +14,11 @@
       <nav class="tabs" role="tablist">
         <button class="tab active" data-tab="plan">Plan routes</button>
         <button class="tab" data-tab="clients">Clients</button>
+        <button class="tab" data-tab="history">History</button>
         <button class="tab" data-tab="settings">Settings</button>
         <button class="tab" data-tab="help">Help</button>
       </nav>
+      <span id="sync-status" class="sync-status"></span>
     </header>
 
     <div id="setup-banner" class="banner warn" hidden></div>
@@ -30,8 +32,9 @@
             <label>Drivers
               <select id="plan-drivers"></select>
             </label>
+            <label title="Paid time starts here">Clock in <input type="time" id="plan-shift" /></label>
             <label>Leave warehouse <input type="time" id="plan-start" /></label>
-            <label>Back by <input type="time" id="plan-end" /></label>
+            <label title="No driver may be back later than this">Latest return <input type="time" id="plan-end" /></label>
             <label title="How hard to push drivers to finish at the same time. Low = cheapest.">Even finish times
               <select id="plan-balance">
                 <option value="low">Low (cheapest)</option>
@@ -40,7 +43,10 @@
               </select>
             </label>
           </div>
-          <div id="driver-names" class="row wrap gap small-gap"></div>
+          <table class="drivers-table">
+            <thead><tr><th>Driver</th><th title="Paid hours already this week (from History). Change it if it's wrong.">Hours worked this week before today</th><th>Overtime starts</th></tr></thead>
+            <tbody id="driver-rows"></tbody>
+          </table>
         </div>
 
         <div class="card">
@@ -79,17 +85,30 @@
         <div id="results" hidden>
           <div class="card">
             <h2>Compare driver counts</h2>
-            <p class="muted small">Labor = paid time from leaving the warehouse until each driver is back × hourly rate. Click a row to view that plan.</p>
+            <p class="muted small" id="cost-note"></p>
             <div class="table-wrap"><table class="compare"><tbody id="compare-rows"></tbody></table></div>
             <p id="data-note" class="muted small"></p>
           </div>
           <div class="row wrap between noprint">
             <h2 id="plan-title"></h2>
             <div class="row gap small-gap">
+              <button id="btn-reset-edits" class="secondary" hidden>Undo my changes</button>
               <button id="btn-print" class="secondary">Print route sheets</button>
             </div>
           </div>
           <div id="map" class="card map noprint"></div>
+
+          <div class="card noprint" id="add-stop-card">
+            <h2>Add a late order</h2>
+            <p class="muted small">Adds the stop to the cheapest spot in the routes above without reshuffling anyone. If the plan is for today, stops already passed (by planned time) are left alone.</p>
+            <div class="row wrap gap small-gap">
+              <select id="add-client" class="grow"></select>
+              <label class="inline"><input type="checkbox" id="add-priority" /> Priority by</label>
+              <input type="time" id="add-by" />
+              <button id="btn-add-stop" class="primary">Add to routes</button>
+            </div>
+          </div>
+
           <div id="driver-cards" class="cards"></div>
         </div>
       </section>
@@ -119,6 +138,26 @@
         </div>
       </section>
 
+      <!-- HISTORY -->
+      <section id="tab-history" class="panel" hidden>
+        <div class="card">
+          <div class="row wrap between">
+            <h2>Hours this week</h2>
+            <div class="row gap small-gap">
+              <button id="btn-week-prev" class="secondary">◀</button>
+              <label class="inline">Week of <input type="date" id="week-of" /></label>
+              <button id="btn-week-next" class="secondary">▶</button>
+            </div>
+          </div>
+          <p class="muted small">Paid hours from clock-in until back at the warehouse, from saved route plans. Change a "Back" time below if a driver actually came back at a different time.</p>
+          <div class="table-wrap"><table class="week"><tbody id="week-rows"></tbody></table></div>
+        </div>
+        <div class="card">
+          <h2>Days</h2>
+          <div id="history-days"></div>
+        </div>
+      </section>
+
       <!-- SETTINGS -->
       <section id="tab-settings" class="panel" hidden>
         <form id="settings-form" class="card grid-form">
@@ -130,23 +169,37 @@
           <label>Latitude <input name="depotLat" type="number" step="any" /></label>
           <label>Longitude <input name="depotLng" type="number" step="any" /></label>
 
-          <h2>Day defaults</h2>
+          <h2>Workday &amp; pay</h2>
+          <label>Drivers clock in <input name="shiftStart" type="time" /></label>
           <label>Leave warehouse <input name="start" type="time" /></label>
-          <label>Back by <input name="endBy" type="time" /></label>
+          <label>Latest return (hard limit) <input name="latestReturn" type="time" /></label>
           <label>Hourly pay ($) <input name="payRate" type="number" step="0.01" min="0" /></label>
+          <label>Regular hours per day <input name="regularHoursPerDay" type="number" step="0.5" min="0" /></label>
+          <label>Regular hours per week (overtime after) <input name="regularHoursPerWeek" type="number" step="0.5" min="0" /></label>
+          <label>Fuel cost per mile ($) <input name="fuelPerMile" type="number" step="0.01" min="0" /></label>
+          <span></span>
           <label>Default unload time (min) <input name="defaultUnload" type="number" min="0" /></label>
           <label>Priority stops: deliver by <input name="priorityBy" type="time" /></label>
 
           <h2>Google Maps</h2>
           <label class="span2">API key (saved only in this browser)
-            <div class="row gap small-gap"><input name="apiKey" type="password" class="grow" autocomplete="off" /><button type="button" id="btn-show-key" class="secondary">Show</button></div>
+            <div class="row gap small-gap"><input name="apiKey" type="password" class="grow" autocomplete="off" /><button type="button" class="secondary" data-reveal="apiKey">Show</button></div>
           </label>
           <label>Traffic sample time <input name="trafficTime" type="time" /></label>
+          <span></span>
           <label>Monthly limit: drive-time lookups <input name="monthlyElementLimit" type="number" min="0" /></label>
           <label>Monthly limit: address lookups <input name="monthlyGeocodeLimit" type="number" min="0" /></label>
           <div class="span2 muted small" id="usage-line"></div>
 
-          <div class="span2 row gap"><button class="primary" type="submit">Save settings</button><span id="settings-saved" class="muted"></span></div>
+          <h2>Share between computers (optional)</h2>
+          <p class="span2 muted small">Keeps clients, settings, history and drive times the same on every computer and phone, through a Google Sheet you own. Setup steps are in the README. The Google API key is not shared — enter it on each computer.</p>
+          <label class="span2">Sheet web app URL <input name="syncUrl" placeholder="https://script.google.com/macros/s/…/exec" /></label>
+          <label class="span2">Passcode
+            <div class="row gap small-gap"><input name="syncKey" type="password" class="grow" autocomplete="off" /><button type="button" class="secondary" data-reveal="syncKey">Show</button></div>
+          </label>
+          <div class="span2 muted small" id="sync-line"></div>
+
+          <div class="span2 row gap"><button class="primary" type="submit">Save settings</button><button type="button" class="secondary" id="btn-sync-now">Sync now</button><span id="settings-saved" class="muted"></span></div>
         </form>
 
         <div class="card">
@@ -160,7 +213,7 @@
 
         <div class="card">
           <h2>Backup</h2>
-          <p class="muted small">Your clients and settings live only in this browser. Download a backup now and then, or to move to another computer. The API key is not included.</p>
+          <p class="muted small">Download a backup now and then. It holds clients, settings, history and drive times (not the API key).</p>
           <div class="row wrap gap small-gap">
             <button id="btn-backup" class="secondary">Download backup</button>
             <button id="btn-restore" class="secondary">Restore from backup</button>
@@ -175,17 +228,23 @@
           <ol>
             <li>Open <b>Plan routes</b>. Pick the delivery date. Clients who usually order that day are already checked.</li>
             <li>Check or uncheck stops to match today's orders. Tick <b>Priority</b> for anything that must arrive early and set its <b>Deliver by</b> time.</li>
-            <li>Choose the number of drivers and click <b>Build routes</b>.</li>
-            <li>Look at <b>Compare driver counts</b>: the cheapest plan that gets everyone back on time is marked <span class="tag good">Best</span>. Click a row to see it.</li>
-            <li>Print the route sheets, or use <b>Open in Google Maps</b> / <b>Copy for text</b> on each driver card to send it to the driver's phone.</li>
+            <li>Choose the number of drivers. Check each driver's hours so far this week (filled in from History).</li>
+            <li>Click <b>Build routes</b>. <b>Compare driver counts</b> shows one driver fewer and one more, with labor (overtime at 1.5×) and fuel. The cheapest on-time plan is marked <span class="tag good">Best</span>. Click a row to see it.</li>
+            <li>Need a change? Use ▲ ▼ to reorder a stop, or <b>Move to</b> to give it to another driver. Times and cost update right away.</li>
+            <li>Send each driver their <b>phone link</b> (or print the sheets). Late order? Use <b>Add a late order</b>.</li>
           </ol>
+          <h2>How cost is figured</h2>
+          <ul>
+            <li>Drivers are paid from clock-in (8:00 AM) until they are back at the warehouse. Every extra driver adds their morning hours, so sometimes a little overtime is cheaper than another driver. The planner works that out.</li>
+            <li>Overtime (1.5×): time past 8 hours in a day, or past 40 hours for the week (Texas follows the federal 40-hour rule). Hours already worked this week come from History.</li>
+            <li>Fuel: miles × fuel cost per mile (Settings).</li>
+            <li>Nobody is planned to come back after the <b>Latest return</b> time.</li>
+          </ul>
           <h2>Good to know</h2>
           <ul>
             <li>Drive times come from Google with typical midday traffic and are saved, so planning a normal day costs nothing. Only new clients trigger a small lookup.</li>
-            <li>If there is no Google key (or the monthly limit is reached), the planner uses straight-line estimates and says so.</li>
             <li>Lines on the map are straight lines between stops, not the actual roads. Google Maps gives the turn-by-turn route.</li>
-            <li>Google Maps links hold up to 9 stops each, so longer routes get "Part 1", "Part 2" links.</li>
-            <li>Client "earliest / latest" hours are optional. The driver will wait if they arrive before a client opens.</li>
+            <li>Every plan you build is saved in <b>History</b> under its date (the last one built or changed counts).</li>
           </ul>
         </div>
       </section>

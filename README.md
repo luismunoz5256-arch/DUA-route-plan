@@ -1,15 +1,21 @@
 # DUA Route Planner
 
-A website for planning the daily delivery routes. The employee picks today's stops and the number of drivers. The planner then splits the stops between drivers and orders each route so that:
+A website for planning the daily delivery routes. The employee picks today's stops and the number of drivers. The planner then splits the stops between drivers and orders each route at the **lowest total cost**:
 
-- everyone is back at the warehouse (840 N Hawkins Blvd) by the "back by" time (default 4:00 PM, leaving at 11:30 AM),
-- priority stops arrive by their "deliver by" time,
-- total paid driver time (cost at $14/hr) is as low as possible,
-- drivers finish at roughly the same time. You can make this stricter with the **Even finish times** setting.
+- **Labor:** drivers are paid from clock-in (8:00 AM, when they make orders and load trucks) until they're back at the warehouse (840 N Hawkins Blvd), at $14/hr. Overtime is 1.5×: time past 8 hours in a day, or past 40 hours for the week. Texas follows the federal 40-hour rule. Hours already worked this week come from the History tab.
+- **Fuel:** miles × fuel cost per mile.
+- **Priority stops** arrive by their "deliver by" time, and nobody comes back after the **latest return** time (default 5:00 PM).
+- Every extra driver costs their morning hours, so a little overtime is sometimes cheaper than another driver. The planner compares **one driver fewer, the number asked for, and one more**, and marks the cheapest workable plan as **Best**.
 
-It also compares one driver fewer and one driver more, and marks the cheapest plan that is still on time as **Best**.
+Also included:
 
-Everything runs in the browser. There is no server and no monthly hosting cost. **Clients, settings and the Google key are saved only in the browser on the computer you use. They are never put on GitHub.**
+- **Driver phone page:** each driver gets a link with their stops, a **Navigate** button per stop, and a **Done** tick.
+- **Hand edits:** move stops up or down, or give a stop to another driver. Times and cost update instantly, and **Undo my changes** restores the original plan.
+- **Late orders:** add a stop to routes that are already sent without reshuffling everyone.
+- **History:** every day's routes, weekly hours per driver, overtime and estimated pay. You can correct a driver's actual return time.
+- **Shared between computers (optional):** clients, settings, history and drive times stay the same on every computer and phone, through a Google Sheet you own.
+
+Everything runs in the browser. There is no server and no monthly hosting cost. Your data is saved in the browser, plus your own Google Sheet if you set up sharing. **Nothing is put on GitHub.**
 
 ---
 
@@ -45,7 +51,7 @@ The planner also works without a key. It then uses straight-line distance estima
 
 ## 3. First-time setup in the planner
 
-1. **Settings** → check the warehouse address → **Find** → **Save settings**. Also check the leave/back-by times, hourly pay ($14), default unload time and the default priority "deliver by" time.
+1. **Settings** → check the warehouse address → **Find** → **Save settings**. Also check clock-in (8:00), leave (11:30), latest return, hourly pay ($14), regular hours (8/day, 40/week), fuel cost per mile, default unload time and the default priority "deliver by" time.
 2. **Clients** → add clients one at a time with **Add client**, or **Import CSV** from a spreadsheet. Columns:
    `name, address, days, unload, earliest, latest, notes`
    - `days`: e.g. `Mon Wed Fri`, `Mon-Sat` or `daily` (clients who order now and then can leave it blank)
@@ -55,23 +61,41 @@ The planner also works without a key. It then uses straight-line distance estima
 4. Optional: **Settings → Pre-load drive times for all clients** looks up all drive times in one go. With 60 clients that's about 3,700 lookups, done once.
 5. **Settings → Download backup** now and then (or to move to another computer).
 
-## 4. Daily use
+## 4. Share between computers and phones (optional, free)
+
+Skip this if one office computer is enough. Otherwise:
+
+1. Create a new Google Sheet in your Google account (name it e.g. "Route Planner data").
+2. In the Sheet: **Extensions → Apps Script**. Delete what's there and paste in everything from [`apps-script/Code.gs`](apps-script/Code.gs).
+3. On the line `const PASSCODE = '...'`, change the passcode to something long that only you know. Click **Save**.
+4. **Deploy → New deployment**. Click the gear → **Web app**. Set **Execute as: Me** and **Who has access: Anyone**, then **Deploy**. Approve the permissions (it only touches this one Sheet).
+5. Copy the **Web app URL** (it ends in `/exec`).
+6. In the planner: **Settings → Share between computers**. Paste the URL and passcode, then **Save settings**. Do the same on every other computer or phone.
+
+From then on, changes sync automatically within a few seconds, and every few minutes. The Google Maps API key is **not** shared: enter it in Settings on each computer that builds routes.
+
+"Anyone" access is needed so the planner can reach the Sheet. The passcode is what keeps others out, so make it long.
+
+## 5. Daily use
 
 1. **Plan routes** → pick the date. Clients who usually order that weekday are already checked.
 2. Check or uncheck stops to match today's orders. Tick **Priority** for urgent stops and set **Deliver by**. Add a note for today if needed.
-3. Choose the number of drivers (and their names), then click **Build routes**.
-4. In **Compare driver counts**, click a row to view that plan. The **Best** row is the cheapest one where everyone is back on time.
-5. Give drivers their routes:
-   - **Print route sheets**: one page per driver.
-   - **Open in Google Maps**: turn-by-turn navigation. Google allows 9 stops per link, so long routes get Part 1 / Part 2.
-   - **Copy for text**: the stop list with times and map links, ready to paste into a text message.
+3. Choose the number of drivers. Check their names and **hours worked this week** (filled in from History; type over it if it's wrong). Click **Build routes**.
+4. In **Compare driver counts**, see labor (with overtime), fuel and total for one driver fewer, the number you asked for, and one more. The cheapest workable plan is marked **Best** and shown. Click another row to view it instead.
+5. Adjust if needed: ▲ ▼ reorders a stop, **Move to…** gives it to another driver.
+6. Send each driver their **phone link** (**Copy phone link** or **Copy for text**), or **Print route sheets**.
+7. A late order comes in? Use **Add a late order**.
+8. At the end of the day, if someone came back much later or earlier than planned, fix their **Back** time in **History** so the week's hours and overtime stay right.
 
 ---
 
 ## How it works (technical)
 
 - `index.html`, `css/`, `js/`: a static site, no build step. The map is [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles, kept in `vendor/`.
-- `js/solver.js`: a vehicle-routing optimizer with time windows. It removes a few stops at a time and re-inserts them where they cost least ("ruin and recreate"), accepts some worse moves early on (simulated annealing), then does a 2-opt clean-up. It minimizes total paid minutes, with heavy penalties for late stops and returns past the back-by time, and a weight for uneven finish times. It runs in a Web Worker, taking about 2 seconds per driver count.
+- `js/solver.js`: a vehicle-routing optimizer with time windows. It removes a few stops at a time and re-inserts them where they cost least ("ruin and recreate"), accepts some worse moves early on (simulated annealing), then does a 2-opt clean-up. It minimizes pay (from clock-in, with per-driver overtime start) plus fuel, with heavy penalties for late stops and returns past the latest-return time, and a weight for uneven finish times. It runs in a Web Worker, taking about 2 seconds per driver count.
+- `js/pay.js`: overtime rules and weekly hour totals.
+- `driver.html` and `js/driver.js`: the driver phone page. The route is packed into the link after `#`, so it never touches a server.
+- `js/sync.js`, `js/merge.js` and `apps-script/Code.gs`: optional sharing through a Google Sheet. Records merge by last edit, and deletes carry over.
 - `js/matrix.js` and `js/google.js`: Google Routes API `computeRouteMatrix` (`TRAFFIC_AWARE`) and Geocoding API, called from the browser and cached in `localStorage`.
 - `js/store.js`: everything saved in `localStorage` under `dua.*` keys.
 
@@ -79,5 +103,5 @@ Run locally:
 
 ```sh
 npm start        # serves http://localhost:8080
-npm test         # optimizer tests (Node 18+)
+npm test         # optimizer, pay and sync-merge tests (Node 18+)
 ```

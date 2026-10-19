@@ -149,3 +149,19 @@ export function pickFile(accept) {
     input.click();
   });
 }
+
+// "2026-10-21" -> "2026-10-19" (the Monday of that week)
+export function weekStart(dateStr) {
+  const wd = weekdayOf(dateStr);
+  return addDays(dateStr, wd === 0 ? -6 : 1 - wd);
+}
+
+export function addDays(dateStr, n) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return localDate(new Date(y, m - 1, d + n));
+}
+
+// 450 -> "7.5"
+export function fmtHours(min) {
+  return (Math.round((min / 60) * 10) / 10).toFixed(1);
+}
