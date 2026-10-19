@@ -3,7 +3,9 @@
 // Deleted clients leave a tombstone so the delete spreads to other computers.
 //
 // Shape: { clients: [], deletedClients: {id: time}, history: {date: entry},
-//          matrix: {pair: [min, meters]}, settings: {}, settingsUpdated: time }
+//          matrix: {pair: [min, meters]}, settings: {}, settingsUpdated: time,
+//          routes: {date: {updated, drivers}}, done: {date: {driver: {stopId: time}}} }
+// `done` belongs to the server (drivers tick stops there), so b's copy wins when a is local.
 
 export function mergeData(a, b) {
   if (!b) return a;
@@ -18,10 +20,15 @@ export function mergeData(a, b) {
   }
   const clients = [...byId.values()].filter((c) => !(deletedClients[c.id] >= (c.updated || 0)));
 
-  const history = { ...(a.history || {}) };
-  for (const [date, e] of Object.entries(b.history || {})) {
-    if (!history[date] || (e.updated || 0) > (history[date].updated || 0)) history[date] = e;
-  }
+  const byDate = (x, y) => {
+    const out = { ...(x || {}) };
+    for (const [date, e] of Object.entries(y || {})) {
+      if (!out[date] || (e.updated || 0) > (out[date].updated || 0)) out[date] = e;
+    }
+    return out;
+  };
+  const history = byDate(a.history, b.history);
+  const routes = byDate(a.routes, b.routes);
 
   const aNewer = (a.settingsUpdated || 0) >= (b.settingsUpdated || 0);
   return {
@@ -31,6 +38,8 @@ export function mergeData(a, b) {
     matrix: { ...(b.matrix || {}), ...(a.matrix || {}) },
     settings: aNewer ? a.settings : b.settings,
     settingsUpdated: Math.max(a.settingsUpdated || 0, b.settingsUpdated || 0),
+    routes,
+    done: b.done || a.done || {},
   };
 }
 

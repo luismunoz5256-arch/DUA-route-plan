@@ -1,6 +1,6 @@
-// Everything is saved in this browser's localStorage. Nothing is sent to GitHub.
-// If a shared Google Sheet is set up (Settings → Sync), sync.js copies the shared
-// parts (clients, settings, route history, drive times) to and from it.
+// Everything is saved in this browser's localStorage and, through sync.js, in the
+// Google Sheet server (clients, settings, history, drive times, published routes).
+// Nothing is sent to GitHub.
 import { localDate } from './util.js';
 
 const PREFIX = 'dua.';
@@ -48,12 +48,10 @@ export const DEFAULT_SETTINGS = {
   driverCount: 3,
   drivers: ['Driver 1', 'Driver 2', 'Driver 3', 'Driver 4', 'Driver 5', 'Driver 6', 'Driver 7', 'Driver 8'],
   balance: 'low',
-  syncUrl: '',
-  syncKey: '',
 };
 
 // Settings that stay on this computer only (never synced or put in backups).
-const LOCAL_ONLY = ['apiKey', 'syncUrl', 'syncKey'];
+const LOCAL_ONLY = [];
 
 function sharedPart(s) {
   const out = { ...s };
@@ -133,6 +131,29 @@ export function deleteHistoryDay(date) {
   const h = getHistory();
   delete h[date];
   write('history', h);
+  changed();
+}
+
+// Routes sent to drivers: { "2026-10-21": { updated, drivers: { "Ana": route } } }
+// (route = the same packed shape as the driver phone page, see share.js)
+export function getRoutes() {
+  return read('routes', {});
+}
+export function saveRoutesDay(date, drivers) {
+  const all = getRoutes();
+  all[date] = { updated: Date.now(), drivers };
+  // keep the last 30 days
+  for (const d of Object.keys(all).sort().slice(0, -30)) delete all[d];
+  write('routes', all);
+  changed();
+}
+
+// Stops ticked done by drivers: { date: { driverName: { stopId: time } } } (set by the server)
+export function getDone() {
+  return read('done', {});
+}
+export function saveDone(done) {
+  write('done', done);
 }
 
 function monthKey() {
@@ -159,6 +180,8 @@ export function exportSyncData() {
     matrix: getMatrixCache(),
     settings: sharedPart(getSettings()),
     settingsUpdated: read('settingsUpdated', 0),
+    routes: getRoutes(),
+    done: getDone(),
   };
 }
 // Writes merged data without announcing a change (that would start another sync).
@@ -171,6 +194,14 @@ export function importSyncData(data) {
   write('deletedClients', data.deletedClients || {});
   write('history', data.history || {});
   write('matrix', data.matrix || {});
+  write('routes', data.routes || {});
+  write('done', data.done || {});
+}
+
+// Drivers only receive their own routes.
+export function importDriverData(data) {
+  write('routes', data.routes || {});
+  write('done', data.done || {});
 }
 export function getSyncState() {
   return read('syncState', { last: null, error: '' });
@@ -179,13 +210,16 @@ export function setSyncState(s) {
   write('syncState', s);
 }
 
-// ----- Backup file (the API key and sync passcode are left out on purpose) -----
+// ----- Backup file (the Google API key is left out on purpose) -----
 
 export function exportBackup() {
-  return { app: 'dua-route-plan', version: 2, exported: new Date().toISOString(), ...exportSyncData() };
+  const data = exportSyncData();
+  const { apiKey, ...settings } = data.settings;
+  return { app: 'dua-route-plan', version: 3, exported: new Date().toISOString(), ...data, settings };
 }
 export function importBackup(data) {
   if (!data || data.app !== 'dua-route-plan') throw new Error('This is not a route planner backup file.');
-  importSyncData({ ...exportSyncData(), ...data, settingsUpdated: Date.now() });
+  const cur = exportSyncData();
+  importSyncData({ ...cur, ...data, settings: { ...data.settings, apiKey: cur.settings.apiKey }, settingsUpdated: Date.now() });
   changed();
 }

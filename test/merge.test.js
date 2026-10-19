@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mergeData, canonical } from '../js/merge.js';
 
-const base = { clients: [], deletedClients: {}, history: {}, matrix: {}, settings: {}, settingsUpdated: 0 };
+const base = { clients: [], deletedClients: {}, history: {}, matrix: {}, settings: {}, settingsUpdated: 0, routes: {}, done: {} };
 
 test('newer client edit wins on either side', () => {
   const a = { ...base, clients: [{ id: '1', name: 'Old', updated: 1 }, { id: '2', name: 'Mine', updated: 5 }] };
@@ -45,4 +45,13 @@ test('merging is order-independent and canonical text is stable', () => {
   ba.clients.sort((x, y) => x.id.localeCompare(y.id));
   assert.equal(canonical(ab), canonical(ba));
   assert.equal(canonical({ b: 1, a: [1, { d: 2, c: 3 }] }), '{"a":[1,{"c":3,"d":2}],"b":1}');
+});
+
+test('published routes merge by date and done ticks come from the server copy', () => {
+  const a = { ...base, routes: { d1: { updated: 2, drivers: { Ana: 'new' } } }, done: { d1: { Ana: { x: 1 } } } };
+  const b = { ...base, routes: { d1: { updated: 1, drivers: { Ana: 'old' } }, d0: { updated: 1 } }, done: { d1: { Ana: { x: 1, y: 2 } } } };
+  const m = mergeData(a, b);
+  assert.equal(m.routes.d1.drivers.Ana, 'new');
+  assert.ok(m.routes.d0);
+  assert.deepEqual(m.done, b.done);
 });

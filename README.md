@@ -13,9 +13,9 @@ Also included:
 - **Hand edits:** move stops up or down, or give a stop to another driver. Times and cost update instantly, and **Undo my changes** restores the original plan.
 - **Late orders:** add a stop to routes that are already sent without reshuffling everyone.
 - **History:** every day's routes, weekly hours per driver, overtime and estimated pay. You can correct a driver's actual return time.
-- **Shared between computers (optional):** clients, settings, history and drive times stay the same on every computer and phone, through a Google Sheet you own.
+- **Logins with roles:** admin, secretary and driver. Everyone sees the same up-to-date data on any computer or phone, stored in a Google Sheet you own.
 
-Everything runs in the browser. There is no server and no monthly hosting cost. Your data is saved in the browser, plus your own Google Sheet if you set up sharing. **Nothing is put on GitHub.**
+The website is free to host on GitHub Pages, and the Google Sheet is free too. **Your data never goes on GitHub.**
 
 ---
 
@@ -25,7 +25,7 @@ Everything runs in the browser. There is no server and no monthly hosting cost. 
 2. Under **Build and deployment**, choose **Deploy from a branch**, pick the branch with this code (`main` after merging, or `claude/delivery-route-optimizer-7javjd`), folder **/ (root)**, then **Save**.
 3. After a minute the site is at `https://luismunoz5256-arch.github.io/DUA-route-plan/`. Bookmark it on the office computer.
 
-On a free GitHub plan the repository has to be public for Pages to work. That's fine: only the program code is public. Your client list and API key never leave your browser, and the site asks search engines not to list it.
+On a free GitHub plan the repository has to be public for Pages to work. That's fine: only the program code is public. Your clients, routes and API key live in your own Google Sheet behind logins, and the site asks search engines not to list it.
 
 ## 2. Get a Google Maps key (free if you stay under Google's monthly free amounts)
 
@@ -45,11 +45,39 @@ Steps:
 4. Recommended safety nets:
    - **Billing → Budgets & alerts**: create a $1 budget with email alerts, so you hear about it immediately if anything is ever charged.
    - **APIs & Services → Routes API → Quotas** (and the same for Geocoding API): lower the per-day limits. Google then refuses requests instead of billing past them.
-5. In the planner open **Settings**, paste the key under **Google Maps → API key**, and click **Save settings**.
+5. After logins are set up (step 3), log in as admin, open **Settings**, paste the key under **Google Maps → API key**, and click **Save settings**.
 
 The planner also works without a key. It then uses straight-line distance estimates, which are rougher, and shows a warning on the results.
 
-## 3. First-time setup in the planner
+## 3. Set up logins
+
+Logins and all shared data live in a Google Sheet you own. It runs a small script that checks passwords and decides who may see what.
+
+| Role | Can do |
+|---|---|
+| **Admin** | Everything: clients, daily stops, routes, history, **Settings** (pay, warehouse, Google key) and **Users** (add or remove people, reset passwords) |
+| **Secretary** | Clients, daily stops, build and send routes, hand edits, late orders, History. Can't change Settings or Users. |
+| **Driver** | Logs in on a phone and sees **only their own route**, with Navigate and Done. Done ticks show up in the office as "✓ Done 1:42 PM". |
+
+One-time setup (about 10 minutes):
+
+1. Create a new Google Sheet (name it e.g. "Route Planner data").
+2. In the Sheet: **Extensions → Apps Script**. Delete what's there and paste in everything from [`apps-script/Code.gs`](apps-script/Code.gs).
+3. On the line `const SETUP_CODE = '...'`, change the setup code to something only you know. Click **Save**.
+4. **Deploy → New deployment**. Click the gear → **Web app**. Set **Execute as: Me** and **Who has access: Anyone**, then **Deploy**. Approve the permissions (it only touches this one Sheet).
+5. Copy the **Web app URL** (it ends in `/exec`).
+6. Open the planner website. Paste the URL as the **Server address**. It switches to **Create admin account**. Enter the setup code, then pick your admin username and password.
+7. In **Users**, add each person with a role and a starting password. For drivers, also pick their **driver name** (the same name used on the Plan screen).
+8. Each person opens the website and logs in. The first time on each computer or phone, they paste the server address. To skip that step, send me the URL and I'll put it in `js/config.js`.
+
+Good to know:
+- **"Anyone" access** in step 4 only means the website can reach the script. Every request still needs a valid login. After 5 wrong passwords, that username is locked for 15 minutes.
+- **Passwords** are stored scrambled (salted hashes), never in plain text.
+- **Logging out** wipes the data saved in that browser. Everything stays in the Google Sheet.
+- **Changing the script later:** update it in Apps Script, then **Deploy → Manage deployments → Edit → Version: New version → Deploy**. That keeps the same URL.
+- **Google key:** the admin enters it once in Settings. It's shared with admin and secretary logins so they can build routes, but never sent to drivers.
+
+## 4. First-time setup in the planner (as admin)
 
 1. **Settings** → check the warehouse address → **Find** → **Save settings**. Also check clock-in (8:00), leave (11:30), latest return, hourly pay ($14), regular hours (8/day, 40/week), fuel cost per mile, default unload time and the default priority "deliver by" time.
 2. **Clients** → add clients one at a time with **Add client**, or **Import CSV** from a spreadsheet. Columns:
@@ -59,22 +87,7 @@ The planner also works without a key. It then uses straight-line distance estima
    - `earliest` / `latest`: optional delivery hours, e.g. `13:00` or `1pm`
 3. **Clients → Find missing locations** puts every client on the map.
 4. Optional: **Settings → Pre-load drive times for all clients** looks up all drive times in one go. With 60 clients that's about 3,700 lookups, done once.
-5. **Settings → Download backup** now and then (or to move to another computer).
-
-## 4. Share between computers and phones (optional, free)
-
-Skip this if one office computer is enough. Otherwise:
-
-1. Create a new Google Sheet in your Google account (name it e.g. "Route Planner data").
-2. In the Sheet: **Extensions → Apps Script**. Delete what's there and paste in everything from [`apps-script/Code.gs`](apps-script/Code.gs).
-3. On the line `const PASSCODE = '...'`, change the passcode to something long that only you know. Click **Save**.
-4. **Deploy → New deployment**. Click the gear → **Web app**. Set **Execute as: Me** and **Who has access: Anyone**, then **Deploy**. Approve the permissions (it only touches this one Sheet).
-5. Copy the **Web app URL** (it ends in `/exec`).
-6. In the planner: **Settings → Share between computers**. Paste the URL and passcode, then **Save settings**. Do the same on every other computer or phone.
-
-From then on, changes sync automatically within a few seconds, and every few minutes. The Google Maps API key is **not** shared: enter it in Settings on each computer that builds routes.
-
-"Anyone" access is needed so the planner can reach the Sheet. The passcode is what keeps others out, so make it long.
+5. Optional: **Settings → Download backup** for an extra copy (everything is already in the Google Sheet).
 
 ## 5. Daily use
 
@@ -95,7 +108,8 @@ From then on, changes sync automatically within a few seconds, and every few min
 - `js/solver.js`: a vehicle-routing optimizer with time windows. It removes a few stops at a time and re-inserts them where they cost least ("ruin and recreate"), accepts some worse moves early on (simulated annealing), then does a 2-opt clean-up. It minimizes pay (from clock-in, with per-driver overtime start) plus fuel, with heavy penalties for late stops and returns past the latest-return time, and a weight for uneven finish times. It runs in a Web Worker, taking about 2 seconds per driver count.
 - `js/pay.js`: overtime rules and weekly hour totals.
 - `driver.html` and `js/driver.js`: the driver phone page. The route is packed into the link after `#`, so it never touches a server.
-- `js/sync.js`, `js/merge.js` and `apps-script/Code.gs`: optional sharing through a Google Sheet. Records merge by last edit, and deletes carry over.
+- `apps-script/Code.gs`: the server. It handles logins (salted SHA-256, 30-day sessions, lockout after repeated failures), role checks, shared data and drivers' done ticks. `test/fake-apps-script.cjs` runs it in Node for the tests.
+- `js/api.js`, `js/sync.js` and `js/merge.js`: login calls and keeping the browser in step with the Sheet. Records merge by last edit, and deletes carry over.
 - `js/matrix.js` and `js/google.js`: Google Routes API `computeRouteMatrix` (`TRAFFIC_AWARE`) and Geocoding API, called from the browser and cached in `localStorage`.
 - `js/store.js`: everything saved in `localStorage` under `dua.*` keys.
 
@@ -103,5 +117,5 @@ Run locally:
 
 ```sh
 npm start        # serves http://localhost:8080
-npm test         # optimizer, pay and sync-merge tests (Node 18+)
+npm test         # optimizer, pay, sync-merge and server/login tests (Node 18+)
 ```

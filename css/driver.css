@@ -1,30 +1,35 @@
-:root {
+/* Driver route view: used by driver.html and by the driver login in index.html. */
+.route-view {
   --brand: #2f6b3b;
   --line: #dde3de;
   --muted: #5f6b64;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: #1d2420;
+  font-size: 17px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 640px;
+  margin: 0 auto;
 }
-* { box-sizing: border-box; }
-body { margin: 0; background: #f4f6f3; font-size: 17px; }
-header { background: var(--brand); color: #fff; padding: 14px 16px; position: sticky; top: 0; z-index: 1; }
-h1 { margin: 0; font-size: 1.3rem; }
-#sub { opacity: 0.9; font-size: 0.95rem; margin-top: 2px; }
-#progress { margin-top: 8px; font-size: 0.9rem; font-weight: 600; }
-main { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-.stop { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; grid-template-columns: 36px 1fr; gap: 10px; }
-.stop.done { opacity: 0.55; }
-.stop.done .name { text-decoration: line-through; }
-.num { width: 34px; height: 34px; border-radius: 50%; background: var(--brand); color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; }
-.stop.depot .num { background: #fff; color: var(--brand); border: 2px solid var(--brand); }
-.time { font-weight: 700; }
-.name { font-weight: 700; font-size: 1.05rem; }
-.addr { color: var(--muted); font-size: 0.95rem; }
-.note { font-size: 0.9rem; margin-top: 4px; }
-.prio { display: inline-block; background: #fde8c8; color: #8a4b00; font-size: 0.8rem; font-weight: 700; border-radius: 999px; padding: 1px 8px; }
-.btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-.btns a, .btns button { flex: 1; min-width: 120px; text-align: center; font: inherit; font-weight: 600; padding: 10px; border-radius: 10px; border: 1px solid #c6cec8; background: #fff; color: #1d2420; text-decoration: none; }
-.btns a.go { background: var(--brand); color: #fff; border-color: var(--brand); }
-footer { padding: 4px 16px 24px; font-size: 0.85rem; color: var(--muted); }
-footer a { color: var(--brand); }
-.error { padding: 24px; }
+.route-view * { box-sizing: border-box; }
+body:has(> .route-view) { margin: 0; background: #f4f6f3; }
+.route-view .route-head { background: var(--brand); color: #fff; padding: 14px 16px; border-radius: 12px; }
+.route-view .route-head h2 { margin: 0; font-size: 1.3rem; color: #fff; }
+.route-view .progress { margin-top: 8px; font-size: 0.9rem; font-weight: 600; }
+.route-view .stop { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px; display: grid; grid-template-columns: 36px 1fr; gap: 10px; }
+.route-view .stop.done { opacity: 0.55; }
+.route-view .stop.done .name { text-decoration: line-through; }
+.route-view .num { width: 34px; height: 34px; border-radius: 50%; background: var(--brand); color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.route-view .stop.depot .num { background: #fff; color: var(--brand); border: 2px solid var(--brand); }
+.route-view .time { font-weight: 700; }
+.route-view .name { font-weight: 700; font-size: 1.05rem; }
+.route-view .addr { color: var(--muted); font-size: 0.95rem; }
+.route-view .note { font-size: 0.9rem; margin-top: 4px; }
+.route-view .prio { display: inline-block; background: #fde8c8; color: #8a4b00; font-size: 0.8rem; font-weight: 700; border-radius: 999px; padding: 1px 8px; }
+.route-view .btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.route-view .btns a, .route-view .btns button { flex: 1; min-width: 120px; text-align: center; font: inherit; font-weight: 600; padding: 10px; border-radius: 10px; border: 1px solid #c6cec8; background: #fff; color: #1d2420; text-decoration: none; cursor: pointer; }
+.route-view .btns a.go { background: var(--brand); color: #fff; border-color: var(--brand); }
+.route-view .foot { font-size: 0.85rem; color: var(--muted); }
+.route-view .error { padding: 24px; }

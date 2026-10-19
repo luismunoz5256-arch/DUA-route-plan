@@ -5,6 +5,8 @@ import { solve, summarize, insertStop } from './solver.js';
 import { overtimeStart, laborCost, minutesBefore, weekSummary } from './pay.js';
 import { encodeRoute } from './share.js';
 import { initSync, syncNow } from './sync.js';
+import * as api from './api.js';
+import { renderRoute } from './routeview.js';
 import {
   esc, toMin, fmtTime, fmtDur, fmtMoney, fmtHours, localDate, weekdayOf, weekStart, addDays, uid,
   daysLabel, parseDays, parseCsv, toCsv, download, pickFile, DAY_NAMES,
@@ -41,7 +43,13 @@ function saveClients() {
 
 // ---------- Tabs & banner ----------
 
+function role() {
+  return api.getSession()?.user?.role || '';
+}
+
 function showTab(name) {
+  if (role() === 'driver') name = 'driver';
+  else if ((name === 'settings' || name === 'users') && role() !== 'admin') name = 'plan';
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.panel').forEach((p) => (p.hidden = p.id !== 'tab-' + name));
   if (name === 'plan') {
@@ -52,6 +60,8 @@ function showTab(name) {
   if (name === 'clients') renderClients();
   if (name === 'history') renderHistory();
   if (name === 'settings') renderSettings();
+  if (name === 'users') renderUsers();
+  if (name === 'driver') renderDriverView();
 }
 
 function currentTab() {
@@ -60,8 +70,13 @@ function currentTab() {
 
 function renderBanner() {
   const msgs = [];
-  if (settings.depotLat == null) msgs.push('Set the warehouse location in <a href="#" data-goto="settings">Settings</a> (click <b>Find</b> next to the address).');
-  if (!settings.apiKey) msgs.push('No Google API key on this computer yet, so drive times will be rough estimates and addresses must be located by hand. Setup steps are in the README.');
+  const admin = role() === 'admin';
+  if (settings.depotLat == null) {
+    msgs.push(admin ? 'Set the warehouse location in <a href="#" data-goto="settings">Settings</a> (click <b>Find</b> next to the address).' : 'The admin still needs to set the warehouse location in Settings.');
+  }
+  if (!settings.apiKey) {
+    msgs.push(admin ? 'No Google API key yet (Settings), so drive times will be rough estimates and addresses must be located by hand. Setup steps are in the README.' : 'No Google API key yet, so drive times are rough estimates. Ask the admin to add it in Settings.');
+  }
   if (!clients.length) msgs.push('Add your clients in the <a href="#" data-goto="clients">Clients</a> tab.');
   const el = $('#setup-banner');
   el.hidden = !msgs.length;
@@ -461,6 +476,12 @@ function savePlan() {
   store.saveLastPlan(plan);
   const opt = viewOption();
   const ev = evaluate(plan, opt);
+  // What drivers see when they log in.
+  const routes = {};
+  ev.routes.forEach((r, i) => {
+    if (r.order.length) routes[driverName(i)] = routePayload(r, i);
+  });
+  store.saveRoutesDay(plan.date, routes);
   store.saveHistoryDay(plan.date, {
     drivers: ev.routes
       .map((r, i) => ({ name: driverName(i), stops: r.order.length, paid: Math.round(r.paid), ot: Math.round(r.ot), miles: Math.round(r.miles * 10) / 10, back: Math.round(r.finish), labor: r.labor, fuel: r.fuel }))
@@ -591,9 +612,9 @@ function routeLinks(r) {
   return mapsLinks(places);
 }
 
-// Link to the phone page for one driver (the route rides inside the link).
-function phoneLink(r, i) {
-  const data = {
+// One driver's route, packed for the driver phone page and the driver login.
+function routePayload(r, i) {
+  return {
     driver: driverName(i),
     date: fmtDateLong(plan.date),
     leave: Math.round(plan.start),
@@ -602,6 +623,7 @@ function phoneLink(r, i) {
     stops: r.order.map((idx, n) => {
       const s = plan.stops[idx - 1];
       return {
+        id: s.id,
         n: s.name,
         a: stopPlace(s),
         t: Math.round(r.stops[n].arrive),
@@ -610,7 +632,11 @@ function phoneLink(r, i) {
       };
     }),
   };
-  return new URL('driver.html', location.href).href.split('#')[0] + '#' + encodeRoute(data);
+}
+
+// Link to the phone page for one driver (the route rides inside the link).
+function phoneLink(r, i) {
+  return new URL('driver.html', location.href).href.split('#')[0] + '#' + encodeRoute(routePayload(r, i));
 }
 
 function driverCard(r, i, k) {
@@ -618,6 +644,7 @@ function driverCard(r, i, k) {
   if (!r.order.length) {
     return `<div class="card driver" style="--route:${color}"><h3>${esc(driverName(i))}</h3><p class="muted">No stops for this driver.</p></div>`;
   }
+  const done = store.getDone()[plan.date]?.[driverName(i)] || {};
   const moveOptions = Array.from({ length: k }, (_, j) => (j === i ? '' : `<option value="${j}">${esc(driverName(j))}</option>`)).join('');
   const rows = r.order
     .map((idx, n) => {
@@ -627,6 +654,7 @@ function driverCard(r, i, k) {
       if (s.priority) tags.push(`<span class="tag prio">Priority · by ${fmtTime(toMin(s.by))}</span>`);
       if (a.late > 0.5) tags.push(`<span class="tag bad">${Math.round(a.late)} min late</span>`);
       if (s.added) tags.push('<span class="tag new">Added</span>');
+      if (done[s.id]) tags.push(`<span class="tag done">✓ Done ${fmtTime(new Date(done[s.id]).getHours() * 60 + new Date(done[s.id]).getMinutes())}</span>`);
       const notes = [`Unload ${s.unload} min`, s.notes, s.today].filter(Boolean).map(esc).join(' · ');
       return `<li><span class="num">${n + 1}</span><span class="time">${fmtTime(a.arrive)}</span>
         <div><div class="who">${esc(s.name)} ${tags.join(' ')}</div><div class="addr">${esc(s.address)}</div><div class="note">${notes}</div></div>
@@ -1131,7 +1159,7 @@ const sform = $('#settings-form');
 const SETTING_FIELDS = [
   'depotName', 'depotAddress', 'depotLat', 'depotLng', 'shiftStart', 'start', 'latestReturn', 'payRate',
   'regularHoursPerDay', 'regularHoursPerWeek', 'fuelPerMile', 'defaultUnload', 'priorityBy', 'apiKey',
-  'trafficTime', 'monthlyElementLimit', 'monthlyGeocodeLimit', 'syncUrl', 'syncKey',
+  'trafficTime', 'monthlyElementLimit', 'monthlyGeocodeLimit',
 ];
 const NUMERIC = new Set(['depotLat', 'depotLng', 'payRate', 'regularHoursPerDay', 'regularHoursPerWeek', 'fuelPerMile', 'defaultUnload', 'monthlyElementLimit', 'monthlyGeocodeLimit']);
 
@@ -1142,13 +1170,11 @@ function renderSettings() {
     `This month: ${u.elements} of ${settings.monthlyElementLimit} drive-time lookups and ${u.geocodes} of ${settings.monthlyGeocodeLimit} address lookups used (counted by this browser).`;
   $('#matrix-line').textContent = `${Object.keys(store.getMatrixCache()).length} drive times saved. Daily planning reuses them, so it normally makes no Google requests.`;
   const sync = store.getSyncState();
-  $('#sync-line').innerHTML = !settings.syncUrl
-    ? 'Not set up.'
-    : sync.error
-      ? `<span class="bad-text">Last sync failed: ${esc(sync.error)}</span>`
-      : sync.last
-        ? `Last synced ${new Date(sync.last).toLocaleString()}.`
-        : 'Not synced yet.';
+  $('#sync-line').innerHTML = sync.error
+    ? `<span class="bad-text">Last save to the Google Sheet failed: ${esc(sync.error)}</span>`
+    : sync.last
+      ? `Saved to the Google Sheet. Last synced ${new Date(sync.last).toLocaleString()}.`
+      : 'Not synced yet.';
 }
 
 sform.addEventListener('click', (e) => {
@@ -1171,24 +1197,9 @@ sform.addEventListener('submit', async (e) => {
   e.preventDefault();
   const el = sform.elements;
   el.apiKey.value = el.apiKey.value.trim();
-  el.syncUrl.value = el.syncUrl.value.trim();
   if (el.depotLat.value === '' && el.apiKey.value) {
     settings.apiKey = el.apiKey.value;
     await locateInto(sform, 'depotAddress', 'depotLat', 'depotLng', $('#settings-saved'));
-  }
-  const syncChanged = el.syncUrl.value !== settings.syncUrl || el.syncKey.value !== settings.syncKey;
-  if (syncChanged && el.syncUrl.value) {
-    // Connecting to the shared sheet: save only the connection, then load what's shared.
-    settings.syncUrl = el.syncUrl.value;
-    settings.syncKey = el.syncKey.value;
-    settings.apiKey = el.apiKey.value;
-    store.setSyncState({ last: null, error: '' });
-    saveSettings();
-    await syncNow();
-    reloadFromStore();
-    renderSettings();
-    $('#settings-saved').textContent = store.getSyncState().error ? 'Could not connect — check the URL and passcode.' : 'Connected. Shared clients and settings loaded.';
-    return;
   }
   for (const f of SETTING_FIELDS) {
     const v = el[f].value;
@@ -1201,7 +1212,6 @@ sform.addEventListener('submit', async (e) => {
 });
 
 $('#btn-sync-now').addEventListener('click', async () => {
-  if (!settings.syncUrl || !settings.syncKey) return alert('Enter the Sheet web app URL and passcode, then click Save settings.');
   await syncNow();
   renderSettings();
 });
@@ -1251,6 +1261,7 @@ $('#btn-restore').addEventListener('click', async () => {
 function reloadFromStore() {
   settings = store.getSettings();
   clients = store.getClients();
+  if (role() === 'driver') return renderDriverView();
   renderPlanControls();
   renderBanner();
   const tab = currentTab();
@@ -1259,15 +1270,244 @@ function reloadFromStore() {
   else if (tab === 'history') renderHistory();
   renderStops();
   renderDriverRows();
+  if (plan && tab === 'plan') renderResults();
+}
+
+// ---------- Driver login view ----------
+
+let driverDate = null;
+
+function renderDriverView() {
+  const me = api.getSession()?.user;
+  const routes = store.getRoutes();
+  const dates = Object.keys(routes).filter((d) => routes[d].drivers?.[me.driverName]).sort();
+  const today = localDate();
+  if (!dates.includes(driverDate)) driverDate = dates.includes(today) ? today : dates[dates.length - 1] || null;
+  $('#driver-days').innerHTML = dates
+    .map((d) => `<button class="${d === driverDate ? 'primary' : 'secondary'}" data-day="${d}">${d === today ? 'Today' : esc(fmtDateLong(d))}</button>`)
+    .join('');
+  const el = $('#driver-route');
+  if (!me.driverName) {
+    el.innerHTML = '<p class="card">Your account is not linked to a driver name yet. Ask the admin.</p>';
+    return;
+  }
+  if (!driverDate) {
+    el.innerHTML = `<p class="card">No route for you yet, ${esc(me.driverName)}. The office will send it after building today's routes — this page checks every couple of minutes.</p>`;
+    return;
+  }
+  const done = store.getDone()[driverDate]?.[me.driverName] || {};
+  renderRoute(el, routes[driverDate].drivers[me.driverName], done, async (stopId, isDone) => {
+    // Show it right away, then save it on the server.
+    const all = store.getDone();
+    const mine = ((all[driverDate] ||= {})[me.driverName] ||= {});
+    if (isDone) mine[stopId] = Date.now();
+    else delete mine[stopId];
+    store.saveDone(all);
+    renderDriverView();
+    try {
+      const r = await api.call('done', { date: driverDate, stopId, done: isDone });
+      all[driverDate][me.driverName] = r.done;
+      store.saveDone(all);
+    } catch (err) {
+      if (err instanceof api.NotLoggedIn) return showLogin();
+      alert('Could not save that — check the connection and try again.\n' + err.message);
+    }
+  });
+}
+
+$('#driver-days').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-day]');
+  if (!b) return;
+  driverDate = b.dataset.day;
+  renderDriverView();
+});
+
+// ---------- Users tab (admin) ----------
+
+let users = [];
+let editingUser = null;
+const uform = $('#user-form');
+
+async function renderUsers() {
+  uform.elements.driverName.innerHTML = settings.drivers.map((n) => `<option>${esc(n)}</option>`).join('');
+  $('#user-driver-name').hidden = uform.elements.role.value !== 'driver';
+  try {
+    users = (await api.call('listUsers')).users;
+  } catch (err) {
+    $('#user-rows').innerHTML = `<tr><td colspan="4" class="bad-text">${esc(err.message)}</td></tr>`;
+    return;
+  }
+  const me = api.getSession()?.user?.username;
+  const label = { admin: 'Admin', secretary: 'Secretary', driver: 'Driver' };
+  $('#user-rows').innerHTML = users
+    .map((u) => `<tr data-user="${esc(u.username)}"><td><b>${esc(u.username)}</b>${u.username === me ? ' <span class="muted small">(you)</span>' : ''}</td>
+      <td>${label[u.role]}</td><td>${esc(u.driverName || '')}</td>
+      <td class="row small-gap"><button class="link" data-uact="edit">Edit / reset password</button>${u.username === me ? '' : '<button class="link danger" data-uact="delete">Remove</button>'}</td></tr>`)
+    .join('');
+}
+
+function resetUserForm() {
+  editingUser = null;
+  uform.reset();
+  uform.elements.username.disabled = false;
+  $('#user-form-title').textContent = 'Add a person';
+  $('#btn-user-cancel').hidden = true;
+  $('#user-driver-name').hidden = uform.elements.role.value !== 'driver';
+}
+
+uform.elements.role.addEventListener('change', () => ($('#user-driver-name').hidden = uform.elements.role.value !== 'driver'));
+$('#btn-user-cancel').addEventListener('click', resetUserForm);
+
+$('#user-rows').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-uact]');
+  if (!b) return;
+  const u = users.find((x) => x.username === b.closest('tr').dataset.user);
+  if (b.dataset.uact === 'edit') {
+    editingUser = u;
+    uform.elements.username.value = u.username;
+    uform.elements.username.disabled = true;
+    uform.elements.role.value = u.role;
+    if (u.driverName && !settings.drivers.includes(u.driverName)) {
+      uform.elements.driverName.insertAdjacentHTML('beforeend', `<option>${esc(u.driverName)}</option>`);
+    }
+    uform.elements.driverName.value = u.driverName || settings.drivers[0];
+    uform.elements.password.value = '';
+    $('#user-form-title').textContent = `Edit ${u.username}`;
+    $('#btn-user-cancel').hidden = false;
+    $('#user-driver-name').hidden = u.role !== 'driver';
+    uform.scrollIntoView({ behavior: 'smooth' });
+  }
+  if (b.dataset.uact === 'delete' && confirm(`Remove ${u.username}? They will be logged out everywhere.`)) {
+    try {
+      await api.call('deleteUser', { username: u.username });
+    } catch (err) {
+      alert(err.message);
+    }
+    renderUsers();
+  }
+});
+
+uform.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const el = uform.elements;
+  const user = { username: editingUser ? editingUser.username : el.username.value, role: el.role.value, driverName: el.driverName.value, password: el.password.value };
+  if (!editingUser && !user.password) return ($('#user-msg').textContent = 'Give them a password.');
+  try {
+    await api.call('saveUser', { user });
+    $('#user-msg').textContent = `Saved ${user.username}.`;
+    resetUserForm();
+    renderUsers();
+  } catch (err) {
+    $('#user-msg').textContent = err.message;
+  }
+});
+
+// ---------- Login ----------
+
+const lform = $('#login-form');
+let setupMode = false;
+
+async function showLogin(msg = '') {
+  document.body.classList.add('logged-out');
+  delete document.body.dataset.role;
+  $('#login-msg').textContent = msg;
+  $('#login-msg').className = 'small' + (msg ? ' bad' : '');
+  const url = api.getServerUrl();
+  lform.elements.server.value = url;
+  $('#server-box').hidden = !!url;
+  setupMode = false;
+  $('#setup-box').hidden = true;
+  $('#login-btn').textContent = 'Log in';
+  if (!url) return;
+  try {
+    setupMode = (await api.call('status')).needsSetup;
+  } catch (err) {
+    $('#server-box').hidden = false;
+    $('#login-msg').textContent = err.message;
+    $('#login-msg').className = 'small bad';
+  }
+  $('#setup-box').hidden = !setupMode;
+  if (setupMode) $('#login-btn').textContent = 'Create admin account';
+}
+
+$('#change-server').addEventListener('click', (e) => {
+  e.preventDefault();
+  $('#server-box').hidden = false;
+  lform.elements.server.focus();
+});
+
+lform.elements.server.addEventListener('change', () => {
+  api.setServerUrl(lform.elements.server.value);
+  showLogin();
+});
+
+lform.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const el = lform.elements;
+  if (el.server.value.trim() && el.server.value.trim() !== api.getServerUrl()) {
+    api.setServerUrl(el.server.value);
+    await showLogin();
+    if (setupMode) return;
+  }
+  if (!api.getServerUrl()) return showLogin('Enter the server address first.');
+  $('#login-btn').disabled = true;
+  try {
+    const user = setupMode ? await api.setupAdmin(el.setupCode.value, el.username.value, el.password.value) : await api.login(el.username.value, el.password.value);
+    lform.reset();
+    store.setSyncState({ last: null, error: '' });
+    await enterApp(user);
+  } catch (err) {
+    $('#login-msg').textContent = err.message;
+    $('#login-msg').className = 'small bad';
+  } finally {
+    $('#login-btn').disabled = false;
+  }
+});
+
+$('#btn-logout').addEventListener('click', async () => {
+  if (!confirm('Log out? This computer will forget the saved data until someone logs in again (it stays safe in the Google Sheet).')) return;
+  await api.logout();
+  location.reload();
+});
+
+$('#btn-password').addEventListener('click', async () => {
+  const oldPassword = prompt('Current password:');
+  if (!oldPassword) return;
+  const newPassword = prompt('New password (at least 6 characters):');
+  if (!newPassword) return;
+  try {
+    await api.call('changePassword', { oldPassword, newPassword });
+    alert('Password changed.');
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+async function enterApp(user) {
+  document.body.classList.remove('logged-out');
+  document.body.dataset.role = user.role;
+  const label = { admin: 'Admin', secretary: 'Secretary', driver: 'Driver' }[user.role];
+  $('#who').textContent = `${user.username} · ${label}`;
+  await initSync({
+    remoteChanged: reloadFromStore,
+    status: (t) => ($('#sync-status').textContent = t),
+    loggedOut: () => showLogin('Please log in again.'),
+  });
+  if (document.body.classList.contains('logged-out')) return;
+  settings = store.getSettings();
+  clients = store.getClients();
+  if (user.role === 'driver') return showTab('driver');
+  plan = store.getLastPlan();
+  if (plan && !plan.problem) plan = null;
+  renderPlanControls();
+  loadDay(planDate);
+  renderBanner();
+  renderResults();
+  showTab('plan');
 }
 
 // ---------- Start ----------
 
-renderPlanControls();
-loadDay(planDate);
-renderBanner();
-renderResults();
-initSync({
-  remoteChanged: reloadFromStore,
-  status: (t) => ($('#sync-status').textContent = t),
-});
+const session = api.getSession();
+if (api.getServerUrl() && session) enterApp(session.user);
+else showLogin();

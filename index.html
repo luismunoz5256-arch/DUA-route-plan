@@ -7,23 +7,84 @@
     <title>DUA Route Planner</title>
     <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/driver.css" />
   </head>
-  <body>
+  <body class="logged-out">
+    <!-- LOGIN -->
+    <section id="login" class="login">
+      <div class="card login-card">
+        <h1>DUA Route Planner</h1>
+        <form id="login-form">
+          <div id="server-box">
+            <label>Server address (from the admin)
+              <input name="server" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off" />
+            </label>
+          </div>
+          <div id="setup-box" hidden>
+            <p class="small">First time: create the admin account. You need the <b>setup code</b> written in the Google Sheet script.</p>
+            <label>Setup code <input name="setupCode" type="password" autocomplete="off" /></label>
+          </div>
+          <label>Username <input name="username" autocomplete="username" autocapitalize="none" required /></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
+          <button class="primary big" type="submit" id="login-btn">Log in</button>
+          <p id="login-msg" class="small"></p>
+          <p class="small"><a href="#" id="change-server">Change server address</a></p>
+        </form>
+      </div>
+    </section>
+
     <header class="topbar">
       <div class="brand">DUA Route Planner</div>
       <nav class="tabs" role="tablist">
         <button class="tab active" data-tab="plan">Plan routes</button>
         <button class="tab" data-tab="clients">Clients</button>
         <button class="tab" data-tab="history">History</button>
-        <button class="tab" data-tab="settings">Settings</button>
+        <button class="tab admin-only" data-tab="users">Users</button>
+        <button class="tab admin-only" data-tab="settings">Settings</button>
         <button class="tab" data-tab="help">Help</button>
       </nav>
       <span id="sync-status" class="sync-status"></span>
+      <div class="account">
+        <span id="who"></span>
+        <button class="link light" id="btn-password">Change password</button>
+        <button class="link light" id="btn-logout">Log out</button>
+      </div>
     </header>
 
     <div id="setup-banner" class="banner warn" hidden></div>
 
     <main>
+      <!-- DRIVER -->
+      <section id="tab-driver" class="panel" hidden>
+        <div class="row wrap gap small-gap driver-days" id="driver-days"></div>
+        <div id="driver-route" class="route-view"></div>
+      </section>
+
+      <!-- USERS (admin) -->
+      <section id="tab-users" class="panel" hidden>
+        <div class="card">
+          <h2>People who can log in</h2>
+          <div class="table-wrap"><table><thead><tr><th>Username</th><th>Role</th><th>Driver name</th><th></th></tr></thead><tbody id="user-rows"></tbody></table></div>
+        </div>
+        <form class="card grid-form" id="user-form">
+          <h2 id="user-form-title">Add a person</h2>
+          <label>Username <input name="username" required autocapitalize="none" /></label>
+          <label>Role
+            <select name="role">
+              <option value="driver">Driver – sees only their own route</option>
+              <option value="secretary">Secretary – clients, stops, routes, history</option>
+              <option value="admin">Admin – everything, plus settings and users</option>
+            </select>
+          </label>
+          <label id="user-driver-name">Driver name (as in the plan)
+            <select name="driverName"></select>
+          </label>
+          <label>Password <input name="password" type="text" autocomplete="off" placeholder="at least 6 characters" /></label>
+          <p class="span2 muted small">Give them the password; they can change it after logging in. When editing someone, leave password empty to keep it.</p>
+          <div class="span2 row gap"><button class="primary" type="submit">Save</button><button type="button" class="secondary" id="btn-user-cancel" hidden>Cancel</button><span id="user-msg" class="small"></span></div>
+        </form>
+      </section>
+
       <!-- PLAN -->
       <section id="tab-plan" class="panel">
         <div class="card">
@@ -182,7 +243,7 @@
           <label>Priority stops: deliver by <input name="priorityBy" type="time" /></label>
 
           <h2>Google Maps</h2>
-          <label class="span2">API key (saved only in this browser)
+          <label class="span2">API key (shared with admin and secretary logins, never with drivers)
             <div class="row gap small-gap"><input name="apiKey" type="password" class="grow" autocomplete="off" /><button type="button" class="secondary" data-reveal="apiKey">Show</button></div>
           </label>
           <label>Traffic sample time <input name="trafficTime" type="time" /></label>
@@ -191,12 +252,6 @@
           <label>Monthly limit: address lookups <input name="monthlyGeocodeLimit" type="number" min="0" /></label>
           <div class="span2 muted small" id="usage-line"></div>
 
-          <h2>Share between computers (optional)</h2>
-          <p class="span2 muted small">Keeps clients, settings, history and drive times the same on every computer and phone, through a Google Sheet you own. Setup steps are in the README. The Google API key is not shared — enter it on each computer.</p>
-          <label class="span2">Sheet web app URL <input name="syncUrl" placeholder="https://script.google.com/macros/s/…/exec" /></label>
-          <label class="span2">Passcode
-            <div class="row gap small-gap"><input name="syncKey" type="password" class="grow" autocomplete="off" /><button type="button" class="secondary" data-reveal="syncKey">Show</button></div>
-          </label>
           <div class="span2 muted small" id="sync-line"></div>
 
           <div class="span2 row gap"><button class="primary" type="submit">Save settings</button><button type="button" class="secondary" id="btn-sync-now">Sync now</button><span id="settings-saved" class="muted"></span></div>
@@ -213,7 +268,7 @@
 
         <div class="card">
           <h2>Backup</h2>
-          <p class="muted small">Download a backup now and then. It holds clients, settings, history and drive times (not the API key).</p>
+          <p class="muted small">Everything is kept in your Google Sheet. A backup file is an extra copy: clients, settings, history and drive times (not the API key).</p>
           <div class="row wrap gap small-gap">
             <button id="btn-backup" class="secondary">Download backup</button>
             <button id="btn-restore" class="secondary">Restore from backup</button>
@@ -231,8 +286,15 @@
             <li>Choose the number of drivers. Check each driver's hours so far this week (filled in from History).</li>
             <li>Click <b>Build routes</b>. <b>Compare driver counts</b> shows one driver fewer and one more, with labor (overtime at 1.5×) and fuel. The cheapest on-time plan is marked <span class="tag good">Best</span>. Click a row to see it.</li>
             <li>Need a change? Use ▲ ▼ to reorder a stop, or <b>Move to</b> to give it to another driver. Times and cost update right away.</li>
-            <li>Send each driver their <b>phone link</b> (or print the sheets). Late order? Use <b>Add a late order</b>.</li>
+            <li>Drivers see their route as soon as they log in on their phone (or send a <b>phone link</b> / print the sheets). Late order? Use <b>Add a late order</b> — drivers get the update within a couple of minutes.</li>
           </ol>
+          <h2>Accounts</h2>
+          <ul>
+            <li><b>Admin</b>: everything, including Settings and Users (add people, reset passwords).</li>
+            <li><b>Secretary</b>: clients, today's stops, building and sending routes, History.</li>
+            <li><b>Driver</b>: logs in on a phone and sees only their own route. Their <b>Done</b> ticks show on the office screen.</li>
+            <li>Use <b>Change password</b> at the top to set your own password. <b>Log out</b> on shared computers and phones.</li>
+          </ul>
           <h2>How cost is figured</h2>
           <ul>
             <li>Drivers are paid from clock-in (8:00 AM) until they are back at the warehouse. Every extra driver adds their morning hours, so sometimes a little overtime is cheaper than another driver. The planner works that out.</li>

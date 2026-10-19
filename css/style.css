@@ -144,3 +144,19 @@ table.week td.num, table.week th.num { text-align: right; }
 .history-day table { width: auto; }
 .history-day input[type='time'] { width: 7.5rem; }
 @media print { .driver li .edit { display: none !important; } }
+
+/* Logins and roles */
+body.logged-out > header, body.logged-out > #setup-banner, body.logged-out > main { display: none !important; }
+body:not(.logged-out) > #login { display: none; }
+.login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--brand); }
+.login-card { width: min(420px, 100%); margin: 0; }
+.login-card h1 { margin: 0 0 1rem; font-size: 1.4rem; color: var(--brand-dark); }
+.login-card form { display: flex; flex-direction: column; gap: 0.8rem; }
+#login-msg.bad { color: var(--bad); }
+.account { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #e5efe7; }
+button.link.light { color: #fff; }
+body:not([data-role='admin']) .admin-only { display: none !important; }
+body[data-role='driver'] .tabs, body[data-role='driver'] #setup-banner { display: none !important; }
+body[data-role='driver'] main { padding: 0; }
+.driver-days { padding: 12px 12px 0; max-width: 640px; margin: 0 auto; }
+.tag.done { background: #dcefdf; color: var(--good); }

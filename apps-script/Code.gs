@@ -1,55 +1,319 @@
-// Shared storage for the DUA Route Planner.
-// Paste this into Extensions → Apps Script of a Google Sheet you own, change PASSCODE,
+// Server for the DUA Route Planner: logins and shared data, kept in a Google Sheet you own.
+//
+// Setup: paste this into Extensions → Apps Script of a new Google Sheet, change SETUP_CODE,
 // then Deploy → New deployment → Web app (Execute as: Me, Who has access: Anyone).
-// The planner keeps one JSON copy of the shared data in the "data" tab.
+// SETUP_CODE is only used once, to create the first admin account.
+//
+// Roles:
+//   admin      everything, including settings and user accounts
+//   secretary  clients, daily stops, routes and history (cannot change settings or users)
+//   driver     only their own routes; can tick stops as done
 
-const PASSCODE = 'change-this-to-something-long';
+const SETUP_CODE = 'change-this-to-something-long';
+const SESSION_DAYS = 30;
+const MAX_FAILS = 5;
+const LOCK_MINUTES = 15;
+const ROLES = ['admin', 'secretary', 'driver'];
+// The only settings a secretary may change (they're on the Plan screen).
+const SECRETARY_SETTINGS = ['driverCount', 'drivers', 'balance'];
 
-function doGet(e) {
-  if (!e.parameter || e.parameter.key !== PASSCODE) return reply({ error: 'Wrong passcode' });
-  return reply({ data: load() });
+function doGet() {
+  return reply({ ok: true, app: 'dua-route-plan' });
 }
 
 function doPost(e) {
-  let body;
+  let req;
   try {
-    body = JSON.parse(e.postData.contents);
+    req = JSON.parse(e.postData.contents);
   } catch (err) {
     return reply({ error: 'Bad request' });
   }
-  if (body.key !== PASSCODE) return reply({ error: 'Wrong passcode' });
+  try {
+    return reply(handle(req));
+  } catch (err) {
+    return reply({ error: String((err && err.message) || err) });
+  }
+}
+
+function handle(req) {
+  switch (req.action) {
+    case 'status':
+      return { needsSetup: loadUsers().length === 0 };
+    case 'setup':
+      return withLock(() => setup(req));
+    case 'login':
+      return withLock(() => login(req));
+  }
+  const user = auth(req.token);
+  switch (req.action) {
+    case 'logout':
+      props().deleteProperty('s_' + req.token);
+      return { ok: true };
+    case 'me':
+      return { user: publicUser(user) };
+    case 'pull':
+      return { user: publicUser(user), data: pullFor(user) };
+    case 'push':
+      requireRole(user, ['admin', 'secretary']);
+      return withLock(() => push(user, req.data));
+    case 'done':
+      requireRole(user, ['driver']);
+      return withLock(() => markDone(user, req));
+    case 'changePassword':
+      return withLock(() => changePassword(user, req));
+    case 'listUsers':
+      requireRole(user, ['admin']);
+      return { users: loadUsers().map(publicUser) };
+    case 'saveUser':
+      requireRole(user, ['admin']);
+      return withLock(() => saveUser(req.user));
+    case 'deleteUser':
+      requireRole(user, ['admin']);
+      return withLock(() => deleteUser(user, req.username));
+  }
+  throw new Error('Unknown action');
+}
+
+// ---------- Accounts ----------
+
+function setup(req) {
+  if (loadUsers().length) throw new Error('Setup was already done. Log in instead.');
+  if (req.setupCode !== SETUP_CODE || SETUP_CODE === 'change-this-to-something-long') {
+    throw new Error('Wrong setup code (change SETUP_CODE in the script first).');
+  }
+  const user = newUser({ username: req.username, role: 'admin', password: req.password });
+  saveUsers([user]);
+  return startSession(user);
+}
+
+function login(req) {
+  const username = clean(req.username);
+  const failKey = 'f_' + username;
+  const fails = JSON.parse(props().getProperty(failKey) || '{"n":0,"until":0}');
+  if (fails.until > Date.now()) throw new Error(`Too many tries. Wait ${LOCK_MINUTES} minutes and try again.`);
+  const user = loadUsers().find((u) => u.username === username);
+  if (!user || user.hash !== hash(String(req.password || ''), user.salt)) {
+    fails.n += 1;
+    if (fails.n >= MAX_FAILS) {
+      fails.n = 0;
+      fails.until = Date.now() + LOCK_MINUTES * 60000;
+    }
+    props().setProperty(failKey, JSON.stringify(fails));
+    throw new Error('Wrong username or password.');
+  }
+  props().deleteProperty(failKey);
+  cleanSessions();
+  return startSession(user);
+}
+
+function startSession(user) {
+  const token = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+  props().setProperty('s_' + token, JSON.stringify({ u: user.username, exp: Date.now() + SESSION_DAYS * 86400000 }));
+  return { token, user: publicUser(user) };
+}
+
+// Looks the user up on every call, so role changes and removals apply at once.
+function auth(token) {
+  const raw = token && props().getProperty('s_' + token);
+  const s = raw && JSON.parse(raw);
+  const user = s && s.exp > Date.now() && loadUsers().find((u) => u.username === s.u);
+  if (!user) throw new Error('Not logged in');
+  return user;
+}
+
+function requireRole(user, roles) {
+  if (roles.indexOf(user.role) < 0) throw new Error('Not allowed for your account');
+}
+
+function changePassword(user, req) {
+  const users = loadUsers();
+  const me = users.find((u) => u.username === user.username);
+  if (me.hash !== hash(String(req.oldPassword || ''), me.salt)) throw new Error('Current password is wrong.');
+  checkPassword(req.newPassword);
+  me.salt = Utilities.getUuid();
+  me.hash = hash(req.newPassword, me.salt);
+  saveUsers(users);
+  return { ok: true };
+}
+
+function saveUser(input) {
+  const users = loadUsers();
+  const username = clean(input && input.username);
+  const existing = users.find((u) => u.username === username);
+  if (ROLES.indexOf(input.role) < 0) throw new Error('Pick a role.');
+  if (existing) {
+    if (existing.role === 'admin' && input.role !== 'admin' && users.filter((u) => u.role === 'admin').length === 1) {
+      throw new Error('Keep at least one admin.');
+    }
+    existing.role = input.role;
+    existing.driverName = input.role === 'driver' ? String(input.driverName || '') : '';
+    if (input.password) {
+      checkPassword(input.password);
+      existing.salt = Utilities.getUuid();
+      existing.hash = hash(input.password, existing.salt);
+    }
+  } else {
+    users.push(newUser(input));
+  }
+  saveUsers(users);
+  return { users: users.map(publicUser) };
+}
+
+function deleteUser(me, username) {
+  const users = loadUsers();
+  if (clean(username) === me.username) throw new Error("You can't remove your own account.");
+  const left = users.filter((u) => u.username !== clean(username));
+  saveUsers(left);
+  return { users: left.map(publicUser) };
+}
+
+function newUser(input) {
+  const username = clean(input.username);
+  if (!/^[a-z0-9._-]{2,30}$/.test(username)) throw new Error('Username: 2–30 letters, numbers, dots or dashes.');
+  if (loadUsers().some((u) => u.username === username)) throw new Error('That username is taken.');
+  checkPassword(input.password);
+  const salt = Utilities.getUuid();
+  return {
+    username,
+    role: input.role,
+    driverName: input.role === 'driver' ? String(input.driverName || '') : '',
+    salt,
+    hash: hash(input.password, salt),
+  };
+}
+
+function checkPassword(p) {
+  if (!p || String(p).length < 6) throw new Error('Passwords need at least 6 characters.');
+}
+
+function clean(name) {
+  return String(name || '').trim().toLowerCase();
+}
+
+function publicUser(u) {
+  return { username: u.username, role: u.role, driverName: u.driverName || '' };
+}
+
+function hash(password, salt) {
+  let h = salt + ':' + password;
+  for (let i = 0; i < 200; i++) {
+    const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, h, Utilities.Charset.UTF_8);
+    h = bytes.map((b) => ((b + 256) % 256).toString(16).padStart(2, '0')).join('');
+  }
+  return h;
+}
+
+function cleanSessions() {
+  const p = props();
+  const now = Date.now();
+  p.getKeys()
+    .filter((k) => k.indexOf('s_') === 0)
+    .forEach((k) => {
+      const s = JSON.parse(p.getProperty(k) || '{}');
+      if (!(s.exp > now)) p.deleteProperty(k);
+    });
+}
+
+// ---------- Shared data ----------
+
+function pullFor(user) {
+  const data = load() || {};
+  if (user.role !== 'driver') return data;
+  // Drivers get only their own routes (last 3 days that have one) and their done ticks.
+  const name = user.driverName;
+  const routes = {};
+  const done = {};
+  Object.keys(data.routes || {})
+    .filter((d) => data.routes[d].drivers && data.routes[d].drivers[name])
+    .sort()
+    .slice(-3)
+    .forEach((d) => {
+      routes[d] = { updated: data.routes[d].updated, drivers: { [name]: data.routes[d].drivers[name] } };
+      done[d] = { [name]: ((data.done || {})[d] || {})[name] || {} };
+    });
+  return { routes, done };
+}
+
+function push(user, incoming) {
+  if (!incoming || typeof incoming !== 'object') throw new Error('Nothing to save');
+  const cur = load() || {};
+  const next = Object.assign({}, incoming);
+  next.done = cur.done || {}; // only drivers change these, through markDone
+  if (user.role !== 'admin') {
+    const settings = Object.assign({}, cur.settings);
+    SECRETARY_SETTINGS.forEach((k) => {
+      if (incoming.settings && k in incoming.settings) settings[k] = incoming.settings[k];
+    });
+    next.settings = settings;
+  }
+  save(next);
+  return { ok: true };
+}
+
+function markDone(user, req) {
+  const data = load() || {};
+  const route = data.routes && data.routes[req.date] && data.routes[req.date].drivers && data.routes[req.date].drivers[user.driverName];
+  if (!route) throw new Error('No route for you on that day.');
+  data.done = data.done || {};
+  const day = (data.done[req.date] = data.done[req.date] || {});
+  const mine = (day[user.driverName] = day[user.driverName] || {});
+  if (req.done) mine[req.stopId] = Date.now();
+  else delete mine[req.stopId];
+  save(data);
+  return { done: mine };
+}
+
+// ---------- Storage ----------
+
+function props() {
+  return PropertiesService.getScriptProperties();
+}
+
+function withLock(fn) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
-    save(body.data);
+    return fn();
   } finally {
     lock.releaseLock();
   }
-  return reply({ ok: true });
 }
 
-function sheet() {
+function sheet(name) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  return ss.getSheetByName('data') || ss.insertSheet('data');
+  return ss.getSheetByName(name) || ss.insertSheet(name);
 }
 
-// Cells hold at most 50,000 characters, so the JSON is split across rows.
+// Cells hold at most 50,000 characters, so JSON is split across rows.
 // Each piece starts with "x" so Sheets never treats it as a number or formula.
-function load() {
-  const sh = sheet();
+function readJson(name) {
+  const sh = sheet(name);
   const rows = sh.getLastRow();
   if (!rows) return null;
   const text = sh.getRange(1, 1, rows, 1).getValues().map((r) => String(r[0]).slice(1)).join('');
   return text ? JSON.parse(text) : null;
 }
 
-function save(data) {
-  const text = JSON.stringify(data);
+function writeJson(name, value) {
+  const text = JSON.stringify(value);
   const pieces = [];
   for (let i = 0; i < text.length; i += 45000) pieces.push(['x' + text.slice(i, i + 45000)]);
-  const sh = sheet();
+  const sh = sheet(name);
   sh.clearContents();
   if (pieces.length) sh.getRange(1, 1, pieces.length, 1).setValues(pieces);
+}
+
+function load() {
+  return readJson('data');
+}
+function save(data) {
+  writeJson('data', data);
+}
+function loadUsers() {
+  return readJson('users') || [];
+}
+function saveUsers(users) {
+  writeJson('users', users);
 }
 
 function reply(obj) {
