@@ -51,7 +51,9 @@ exports.createServer = function createServer({ setupCode = 'test-setup-code', ge
     CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
     UrlFetchApp: {
       fetch(url, opts) {
-        const host = new URL(url).host;
+        const { host, pathname } = new URL(url);
+        // Like the real MyGeotab: only /apiv1 answers.
+        if (pathname !== '/apiv1') return { getContentText: () => '<html>Not Found</html>', getResponseCode: () => 404 };
         const { method, params } = JSON.parse(opts.payload);
         let body;
         try {

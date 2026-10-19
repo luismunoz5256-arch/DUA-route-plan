@@ -321,7 +321,7 @@ function geotabStatus() {
 }
 
 function geotabRpc(server, method, params) {
-  const url = 'https://' + server + '/apis/';
+  const url = 'https://' + server + '/apiv1';
   const res = UrlFetchApp.fetch(url, {
     method: 'post',
     contentType: 'application/json',
@@ -332,7 +332,7 @@ function geotabRpc(server, method, params) {
   try {
     body = JSON.parse(res.getContentText());
   } catch (err) {
-    throw new Error('Geotab did not answer at ' + url + ' (HTTP ' + res.getResponseCode() + '). The Server box should say my.geotab.com.');
+    throw new Error('Geotab did not answer at ' + url + ' (HTTP ' + res.getResponseCode() + ').');
   }
   if (body.error) {
     const inner = (body.error.errors && body.error.errors[0]) || body.error.data || {};
