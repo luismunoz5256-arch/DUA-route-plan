@@ -43,3 +43,14 @@ test('week summary counts daily and weekly overtime', () => {
   assert.ok(Math.abs(ana.pay - (14 * 40 + 21 * 1)) < 1e-9);
   assert.equal(ana.days[2], 540);
 });
+
+test('for pay, a long day is not overtime unless the week passes 40 hours', () => {
+  const h = {
+    '2026-10-19': { drivers: [{ name: 'Ana', paid: 9 * 60, source: 'truck' }] },
+    '2026-10-20': { drivers: [{ name: 'Ana', paid: 7 * 60 }] },
+  };
+  const [ana] = weekSummary(h, '2026-10-19', { regWeekMin: 2400, rate: 14 });
+  assert.equal(ana.ot, 0);
+  assert.equal(ana.pay, 16 * 14);
+  assert.deepEqual(ana.fromTruck.slice(0, 2), [true, false]);
+});

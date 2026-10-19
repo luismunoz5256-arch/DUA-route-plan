@@ -400,20 +400,23 @@ function geotabLive() {
   return trucks;
 }
 
-// Trips (with stops between them) and a thinned GPS trail for each truck, for one day.
+// Trips (with stops between them) for each truck between `from` and `to`, plus a thinned
+// GPS trail unless trail: false (used for a whole week of payroll, where only trips matter).
 function geotabDay(req) {
-  const ids = (req.deviceIds || []).slice(0, 20);
+  const ids = (req.deviceIds || []).slice(0, 30);
   if (!ids.length) return { trucks: {} };
+  const withTrail = req.trail !== false;
+  const per = withTrail ? 2 : 1;
   const calls = [];
   ids.forEach((id) => {
     const search = { deviceSearch: { id: id }, fromDate: req.from, toDate: req.to };
     calls.push({ method: 'Get', params: { typeName: 'Trip', search: Object.assign({ includeOverlappedTrips: true }, search) } });
-    calls.push({ method: 'Get', params: { typeName: 'LogRecord', search: search, resultsLimit: 20000 } });
+    if (withTrail) calls.push({ method: 'Get', params: { typeName: 'LogRecord', search: search, resultsLimit: 20000 } });
   });
   const results = geotab('ExecuteMultiCall', { calls: calls });
   const trucks = {};
   ids.forEach((id, i) => {
-    const trips = (results[i * 2] || []).map((t) => ({
+    const trips = (results[i * per] || []).map((t) => ({
       start: t.start,
       stop: t.stop,
       nextStart: t.nextTripStart || null,
@@ -424,7 +427,7 @@ function geotabDay(req) {
       lat: t.stopPoint ? t.stopPoint.y : null,
       lng: t.stopPoint ? t.stopPoint.x : null,
     }));
-    const logs = results[i * 2 + 1] || [];
+    const logs = withTrail ? results[i * 2 + 1] || [] : [];
     const step = Math.max(1, Math.ceil(logs.length / 800));
     const trail = logs.filter((_, k) => k % step === 0).map((l) => [l.latitude, l.longitude]);
     trucks[id] = { trips: trips, trail: trail };

@@ -228,7 +228,12 @@
               <button id="btn-week-next" class="secondary">▶</button>
             </div>
           </div>
-          <p class="muted small">Paid hours from clock-in until back at the warehouse, from saved route plans. Change a "Back" time below if a driver actually came back at a different time.</p>
+          <p class="muted small">Paid hours = clock-in until back at the warehouse. 🚚 = real return time from the truck; other days use the plan or a time typed in below. Overtime is the hours past 40 for the week (1.5× pay).</p>
+          <div class="row wrap gap small-gap">
+            <button id="btn-week-trucks" class="primary admin-only">Get this week's return times from the trucks</button>
+            <button id="btn-week-csv" class="secondary">Download payroll (CSV)</button>
+            <span id="week-msg" class="small"></span>
+          </div>
           <div class="table-wrap"><table class="week"><tbody id="week-rows"></tbody></table></div>
         </div>
         <div class="card">
@@ -337,7 +342,8 @@
           <h2>Trucks (admin)</h2>
           <ul>
             <li>With MyGeotab connected (Settings → Truck tracking), the <b>Trucks</b> tab shows each truck live, which planned stops it reached and when, how long it stayed, idle time, miles, and stops that weren't on the route.</li>
-            <li>Real return times go into <b>History</b> automatically (marked 🚚). A time typed in History always wins.</li>
+            <li>Pick any past day to see each truck's report for that day.</li>
+            <li><b>Payroll:</b> in <b>History</b>, pick the week and click <b>Get this week's return times from the trucks</b>. Hours count from clock-in until the truck is back at the warehouse (🚚). Overtime is the hours past 40 for the week, paid at 1.5×. Then click <b>Download payroll (CSV)</b>. A time typed into a day's <b>Back</b> box always wins over the truck.</li>
           </ul>
           <h2>How cost is figured</h2>
           <ul>

@@ -873,6 +873,7 @@ function renderMap(view, ev) {
 // ---------- History tab ----------
 
 let historyWeek = weekStart(localDate());
+let weekRows = [];
 
 function renderHistory() {
   const history = store.getHistory();
@@ -890,12 +891,13 @@ function renderHistory() {
       ? rows
           .map((r) => {
             const over = r.total > rules.regWeekMin;
-            return `<tr><td><b>${esc(r.name)}</b></td>${r.days.map((m) => `<td class="num">${m == null ? '' : fmtHours(m)}</td>`).join('')}
+            return `<tr><td><b>${esc(r.name)}</b></td>${r.days.map((m, i) => `<td class="num">${m == null ? '' : fmtHours(m)}${r.fromTruck[i] ? ' 🚚' : ''}</td>`).join('')}
             <td class="num ${over ? 'bad-text' : ''}"><b>${fmtHours(r.total)}</b></td>
             <td class="num">${r.ot >= 0.5 ? fmtHours(r.ot) : '—'}</td><td class="num">${fmtMoney(r.pay)}</td></tr>`;
           })
           .join('')
-      : '<tr><td colspan="11" class="muted">No routes saved for this week.</td></tr>');
+      : '<tr><td colspan="11" class="muted">Nothing saved for this week yet.</td></tr>');
+  weekRows = rows;
 
   const dates = Object.keys(history).sort().reverse();
   $('#history-days').innerHTML = dates.length
@@ -905,13 +907,13 @@ function renderHistory() {
           const h = history[date];
           return `<div class="history-day" data-date="${date}">
             <div class="row wrap between"><b>${esc(fmtDateLong(date))}</b>
-              <span class="small">${h.stops} stops · ${Math.round(h.miles || 0)} mi · labor ${fmtMoney(h.labor || 0)} · fuel ${fmtMoney(h.fuel || 0)} · <b>${fmtMoney(h.total || 0)}</b>
+              <span class="small">${h.stops ? `${h.stops} stops · ${Math.round(h.miles || 0)} mi` : 'no plan in the app'}
               <button class="link danger" data-del="${date}">Delete</button></span></div>
             <table><tbody>${(h.drivers || [])
-              .map((d, i) => `<tr><td>${esc(d.name)}</td><td class="small">${d.stops} stops</td>
+              .map((d, i) => `<tr><td>${esc(d.name)}</td><td class="small">${d.stops ? `${d.stops} stops` : ''}</td>
                 <td><label class="inline small">Back <input type="time" data-back="${i}" value="${fmtTimeInput(d.back)}" /></label>
                   <span class="muted small">${d.source === 'truck' ? '🚚 from truck' : d.source === 'manual' ? '✎ typed in' : 'planned'}</span></td>
-                <td class="small">${fmtHours(d.paid)} h${d.ot ? ` (${fmtHours(d.ot)} OT)` : ''}</td></tr>`)
+                <td class="small">${fmtHours(d.paid)} h</td></tr>`)
               .join('')}</tbody></table>
           </div>`;
         })
@@ -930,15 +932,79 @@ $('#week-of').addEventListener('change', (e) => {
   historyWeek = weekStart(e.target.value);
   renderHistory();
 });
+// Payroll: fetch every truck's trips for the week and record each day's real return time.
+$('#btn-week-trucks').addEventListener('click', async (e) => {
+  const btn = e.target;
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Getting truck data…';
+  try {
+    const st = await api.call('geotabStatus');
+    if (!st.connected) throw new Error('Connect Geotab first (Settings → Truck tracking).');
+    const devices = await loadDevices();
+    const pairs = truckPairs(devices);
+    const from = localDayRange(historyWeek).from;
+    const to = localDayRange(addDays(historyWeek, 6)).to;
+    const week = await api.call('geotabDay', { deviceIds: pairs.map(([, id]) => id), from, to, trail: false });
+    const depot = settings.depotLat == null ? null : { lat: Number(settings.depotLat), lng: Number(settings.depotLng) };
+    if (!depot) throw new Error('Set the warehouse location in Settings first — return times are found by the truck arriving there.');
+    let found = 0;
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(historyWeek, i);
+      if (date > localDate()) break;
+      for (const [name, id] of pairs) {
+        const trips = (week.trucks[id]?.trips || []).filter((t) => localDate(new Date(t.start)) === date);
+        if (!trips.length) continue;
+        const r = analyzeDay({ trips, depot, radius: num(settings.geotabRadius, 200) });
+        if (r.back == null) continue;
+        setActualBack(date, name, Math.round(minuteOfDay(r.back)), 'truck');
+        found++;
+      }
+    }
+    renderHistory();
+    $('#week-msg').textContent = found ? `Got ${found} return time(s) from the trucks. Times typed in by hand were kept.` : 'No truck returns to the warehouse found for this week.';
+  } catch (err) {
+    if (err instanceof api.NotLoggedIn) return showLogin('Please log in again.');
+    $('#week-msg').innerHTML = `<span class="bad-text">${esc(err.message)}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+});
+
+$('#btn-week-csv').addEventListener('click', () => {
+  if (!weekRows.length) return alert('Nothing to download for this week.');
+  const rate = num(settings.payRate, 14);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(historyWeek, i));
+  const rows = [
+    ['Driver', ...days.map((d) => `${DAY_NAMES[weekdayOf(d)]} ${d}`), 'Total hours', 'Regular hours', 'Overtime hours', 'Rate', 'Pay'],
+    ...weekRows.map((r) => [
+      r.name,
+      ...r.days.map((m) => (m == null ? '' : fmtHours(m))),
+      fmtHours(r.total),
+      fmtHours(r.total - r.ot),
+      fmtHours(r.ot),
+      rate.toFixed(2),
+      r.pay.toFixed(2),
+    ]),
+  ];
+  download(`payroll-week-of-${historyWeek}.csv`, toCsv(rows), 'text/csv');
+});
+
 $('#btn-week-prev').addEventListener('click', () => { historyWeek = addDays(historyWeek, -7); renderHistory(); });
 $('#btn-week-next').addEventListener('click', () => { historyWeek = addDays(historyWeek, 7); renderHistory(); });
 
 // Set a driver's real return time for a day and recalculate that day's pay.
 // source: 'manual' (typed in History) or 'truck' (from Geotab; never overrides a typed time).
 function setActualBack(date, name, back, source) {
-  const h = store.getHistory()[date];
-  const d = h?.drivers?.find((x) => x.name === name);
-  if (!d || back == null) return false;
+  if (back == null) return false;
+  // Days without a plan in the app (or a truck nobody planned) still count for pay.
+  const h = store.getHistory()[date] || { drivers: [], stops: 0, miles: 0, fuel: 0, shiftStart: payRules().shiftStart };
+  let d = h.drivers.find((x) => x.name === name);
+  if (!d) {
+    d = { name, stops: 0, paid: 0, ot: 0, labor: 0 };
+    h.drivers.push(d);
+  }
   if (source === 'truck' && d.source === 'manual') return false;
   if (d.source === source && Math.abs(d.back - back) < 1) return false;
   const rules = payRules();
@@ -1354,6 +1420,18 @@ async function loadDevices() {
   return geotabDeviceList;
 }
 
+// [name, deviceId, hasDriver] for every truck: drivers' trucks first (in driver order), then the rest.
+function truckPairs(devices) {
+  const byDevice = new Map();
+  for (const name of settings.drivers) {
+    const id = settings.trucks?.[name];
+    if (id && !byDevice.has(id)) byDevice.set(id, name);
+  }
+  const assigned = [...byDevice.entries()].filter(([id]) => devices.some((d) => d.id === id)).map(([id, name]) => [name, id, true]);
+  const rest = devices.filter((d) => !byDevice.has(d.id)).map((d) => [d.name, d.id, false]);
+  return [...assigned, ...rest];
+}
+
 function localDayRange(date) {
   const [y, m, d] = date.split('-').map(Number);
   return { from: new Date(y, m - 1, d).toISOString(), to: new Date(y, m - 1, d + 1).toISOString() };
@@ -1380,7 +1458,6 @@ async function renderTrucks() {
   if (!$('#trucks-date').value) $('#trucks-date').value = localDate();
   const date = $('#trucks-date').value;
   const today = date === localDate();
-  const pairs = settings.drivers.map((name) => [name, settings.trucks?.[name]]).filter(([, id]) => id);
   status('Loading…');
   try {
     const st = await api.call('geotabStatus');
@@ -1389,13 +1466,15 @@ async function renderTrucks() {
       $('#truck-cards').innerHTML = '';
       return status('');
     }
+    // Every truck in Geotab, named after its driver when one is assigned in Settings.
+    const devices = await loadDevices();
+    const pairs = truckPairs(devices);
     if (!pairs.length) {
-      note.innerHTML = 'Pick which truck each driver drives in <a href="#" data-goto="settings">Settings → Truck tracking</a>.';
+      note.textContent = 'No trucks found in Geotab.';
       $('#truck-cards').innerHTML = '';
       return status('');
     }
-    const [devices, day, live] = await Promise.all([
-      loadDevices(),
+    const [day, live] = await Promise.all([
       api.call('geotabDay', { deviceIds: pairs.map(([, id]) => id), ...localDayRange(date) }),
       today ? api.call('geotabLive') : Promise.resolve({ trucks: [] }),
     ]);
@@ -1403,7 +1482,7 @@ async function renderTrucks() {
     const byId = new Map(clients.map((c) => [c.id, c]));
     const depot = settings.depotLat == null ? null : { lat: Number(settings.depotLat), lng: Number(settings.depotLng) };
     let historyChanged = false;
-    const rows = pairs.map(([name, id], i) => {
+    const rows = pairs.map(([name, id, driver], i) => {
       const route = routes[name];
       const planned = (route?.stops || [])
         .map((s) => {
@@ -1416,6 +1495,7 @@ async function renderTrucks() {
       if (report.back != null && setActualBack(date, name, Math.round(minuteOfDay(report.back)), 'truck')) historyChanged = true;
       return {
         name,
+        driver,
         color: COLORS[i % COLORS.length],
         device: devices.find((d) => d.id === id),
         route,
@@ -1457,7 +1537,7 @@ function truckCard(t) {
     .map((u) => `<li>${timeOf(u.arrive)} · stopped ${fmtDur(u.minutes)} · <a href="https://www.google.com/maps?q=${u.lat},${u.lng}" target="_blank" rel="noopener">see place</a></li>`)
     .join('');
   return `<div class="card driver truck-card" style="--route:${t.color}">
-    <div class="row between"><h3>${esc(t.name)}</h3><span class="muted small">🚚 ${esc(t.device?.name || 'Unknown truck')}</span></div>
+    <div class="row between"><h3>${t.driver ? esc(t.name) : `🚚 ${esc(t.name)}`}</h3><span class="muted small">${t.driver ? `🚚 ${esc(t.device?.name || 'Unknown truck')}` : 'no driver assigned'}</span></div>
     ${$('#trucks-date').value === localDate() ? `<div class="live">${stateText(t.live)}</div>` : ''}
     <div class="stats">
       <span>Left <b>${timeOf(r.left)}</b></span>

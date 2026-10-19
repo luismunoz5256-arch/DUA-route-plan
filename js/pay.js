@@ -22,21 +22,22 @@ export function minutesBefore(history, date, name) {
   return sum;
 }
 
-// Per-driver totals for the week starting on Monday `monday`.
-export function weekSummary(history, monday, { regDayMin, regWeekMin, rate }) {
+// Per-driver totals for the week starting on Monday `monday`, for paying people:
+// overtime is only the hours past the weekly limit (40), as Texas / federal law counts it.
+export function weekSummary(history, monday, { regWeekMin, rate }) {
   const byName = new Map();
   for (let i = 0; i < 7; i++) {
     const date = addDays(monday, i);
     for (const d of history[date]?.drivers || []) {
-      if (!byName.has(d.name)) byName.set(d.name, { name: d.name, days: Array(7).fill(null), total: 0, dailyOt: 0 });
+      if (!byName.has(d.name)) byName.set(d.name, { name: d.name, days: Array(7).fill(null), fromTruck: Array(7).fill(false), total: 0 });
       const row = byName.get(d.name);
       row.days[i] = d.paid;
       row.total += d.paid;
-      row.dailyOt += Math.max(0, d.paid - regDayMin);
+      row.fromTruck[i] = d.source === 'truck';
     }
   }
   return [...byName.values()].map((row) => {
-    const ot = Math.max(row.dailyOt, row.total - regWeekMin);
+    const ot = Math.max(0, row.total - regWeekMin);
     return { ...row, ot, pay: laborCost(row.total, ot, rate) };
   });
 }

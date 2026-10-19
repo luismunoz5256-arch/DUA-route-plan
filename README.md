@@ -96,7 +96,8 @@ This adds a **Trucks** tab, visible to admins only. It shows:
 - **Live map:** each truck's position, whether it's driving or stopped, and for how long.
 - **Planned vs. actual:** for every stop, when the truck actually arrived, how long it stayed, and whether it was on time, late or never reached.
 - **Day report per driver:** when they left and got back, driving time, idle time and miles. Stops that weren't on the route are listed with how long the truck sat there.
-- **Real hours:** each truck's actual return time goes into **History** automatically, so weekly hours and overtime use real times. A time someone types in History always wins over the truck's time.
+- **Every truck, any day:** pick a date to see each truck's report for that day, like MyGeotab's per-truck view. Trucks without an assigned driver show up under their own name.
+- **Weekly payroll from the trucks:** in **History**, pick a week and click **Get this week's return times from the trucks**. The app fills in every day's real return time (marked 🚚) and works out hours, overtime and pay, even for days nobody built a plan in the app. **Download payroll (CSV)** gives a spreadsheet for the week. If a time is wrong, type the right one in the day's **Back** box. A typed time always wins over the truck's time.
 
 The Geotab login is stored only on your Google Sheet server. It's never sent to any browser, and secretaries and drivers can't reach the Geotab data at all.
 

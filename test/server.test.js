@@ -217,3 +217,13 @@ test('Geotab: a MyGeotab address pasted into the database box still works', () =
   assert.equal(r.database, 'dua_produce');
   assert.equal(g.calls[0].params.database, 'dua_produce');
 });
+
+test('Geotab: a week of trips without GPS trails for payroll', () => {
+  const { s, g, admin } = geotabServer();
+  s.call({ action: 'geotabSave', token: admin, database: 'dua', userName: 'api@dua', password: 'geo-pass' });
+  const r = s.call({ action: 'geotabDay', token: admin, deviceIds: ['b1', 'b2'], from: '2026-10-19T06:00:00Z', to: '2026-10-26T06:00:00Z', trail: false });
+  assert.equal(r.trucks.b1.trips.length, 1);
+  assert.deepEqual(r.trucks.b2.trail, []);
+  const multi = g.calls.find((c) => c.method === 'ExecuteMultiCall');
+  assert.deepEqual(multi.params.calls.map((c) => c.params.typeName), ['Trip', 'Trip']);
+});
