@@ -13,6 +13,7 @@ Also included:
 - **Hand edits:** move stops up or down, or give a stop to another driver. Times and cost update instantly, and **Undo my changes** restores the original plan.
 - **Late orders:** add a stop to routes that are already sent without reshuffling everyone.
 - **History:** every day's routes, weekly hours per driver, overtime and estimated pay. You can correct a driver's actual return time.
+- **Truck tracking (MyGeotab, optional):** a live truck map, planned vs. actual for every stop, a day report (left, back, driving, idling, unplanned stops) and real return times for payroll. Admin only.
 - **Logins with roles:** admin, secretary and driver. Everyone sees the same up-to-date data on any computer or phone, stored in a Google Sheet you own.
 
 The website is free to host on GitHub Pages, and the Google Sheet is free too. **Your data never goes on GitHub.**
@@ -89,6 +90,40 @@ Good to know:
 4. Optional: **Settings → Pre-load drive times for all clients** looks up all drive times in one go. With 60 clients that's about 3,700 lookups, done once.
 5. Optional: **Settings → Download backup** for an extra copy (everything is already in the Google Sheet).
 
+## 4b. Connect MyGeotab truck tracking (optional, admin only)
+
+This adds a **Trucks** tab, visible to admins only. It shows:
+- **Live map:** each truck's position, whether it's driving or stopped, and for how long.
+- **Planned vs. actual:** for every stop, when the truck actually arrived, how long it stayed, and whether it was on time, late or never reached.
+- **Day report per driver:** when they left and got back, driving time, idle time and miles. Stops that weren't on the route are listed with how long the truck sat there.
+- **Real hours:** each truck's actual return time goes into **History** automatically, so weekly hours and overtime use real times. A time someone types in History always wins over the truck's time.
+
+The Geotab login is stored only on your Google Sheet server. It's never sent to any browser, and secretaries and drivers can't reach the Geotab data at all.
+
+**A. Create a separate Geotab login for the app.** Whoever manages your Geotab account can do this:
+1. Log in to MyGeotab as an administrator.
+2. Go to **People → Users & Drivers → + User**. The menu names can differ slightly between MyGeotab versions.
+3. Fill in:
+   - **Username / email:** e.g. `routeplanner@yourcompany.com`. It doesn't need to be a real mailbox, but some setups require one.
+   - **Password:** something long.
+   - **Security clearance:** **View only**, so the app can read data but never change anything.
+   - **Data access:** the group your box trucks are in (usually the whole company).
+   - Make sure **"This user is a driver"** is **off**.
+4. Save. Then log in to MyGeotab once as this new user, in a private browser window. Geotab sometimes requires a password change on first login. Use the final password in the app.
+5. Note your **database name**. It's the company name in the MyGeotab web address, e.g. `my.geotab.com/`**`dua_produce`**`/…`.
+
+**B. Update the Google Sheet script.** This is needed once, because the script gained the Geotab connection:
+1. Open your Sheet → **Extensions → Apps Script**. Replace everything with the new [`apps-script/Code.gs`](apps-script/Code.gs). Before you do, copy your current `SETUP_CODE` line and keep it in the new script.
+2. Click **Save**. In the function menu at the top, pick **doGet** and click **Run**. Google asks for a new permission, "Connect to an external service", which is how the script talks to Geotab. Approve it.
+3. **Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy.** The web address stays the same.
+
+**C. Connect in the planner.** Log in as admin and go to **Settings → Truck tracking (MyGeotab)**:
+1. Enter the server (`my.geotab.com`), database, username and password, then click **Connect**.
+2. Under **Which truck does each driver drive?**, pick each driver's truck.
+3. Open the **Trucks** tab.
+
+A stop counts as reached when the truck stops within 200 meters of the client's address. You can change that distance in Settings.
+
 ## 5. Daily use
 
 1. **Plan routes** → pick the date. Clients who usually order that weekday are already checked.
@@ -109,6 +144,7 @@ Good to know:
 - `js/pay.js`: overtime rules and weekly hour totals.
 - `driver.html` and `js/driver.js`: the driver phone page. The route is packed into the link after `#`, so it never touches a server.
 - `apps-script/Code.gs`: the server. It handles logins (salted SHA-256, 30-day sessions, lockout after repeated failures), role checks, shared data and drivers' done ticks. `test/fake-apps-script.cjs` runs it in Node for the tests.
+- `js/tracking.js`: turns Geotab trips (each one ends where the truck stopped) into left and back times, visits matched to planned stops, and unplanned stops. The server calls MyGeotab's JSON-RPC API (`Authenticate`, `Get` Device / DeviceStatusInfo / Trip / LogRecord) and caches the session.
 - `js/api.js`, `js/sync.js` and `js/merge.js`: login calls and keeping the browser in step with the Sheet. Records merge by last edit, and deletes carry over.
 - `js/matrix.js` and `js/google.js`: Google Routes API `computeRouteMatrix` (`TRAFFIC_AWARE`) and Geocoding API, called from the browser and cached in `localStorage`.
 - `js/store.js`: everything saved in `localStorage` under `dua.*` keys.
@@ -117,5 +153,5 @@ Run locally:
 
 ```sh
 npm start        # serves http://localhost:8080
-npm test         # optimizer, pay, sync-merge and server/login tests (Node 18+)
+npm test         # optimizer, pay, sync-merge, tracking and server/login/Geotab tests (Node 18+)
 ```

@@ -7,6 +7,7 @@ import { encodeRoute } from './share.js';
 import { initSync, syncNow } from './sync.js';
 import * as api from './api.js';
 import { renderRoute } from './routeview.js';
+import { analyzeDay, parseDuration, minuteOfDay } from './tracking.js';
 import {
   esc, toMin, fmtTime, fmtDur, fmtMoney, fmtHours, localDate, weekdayOf, weekStart, addDays, uid,
   daysLabel, parseDays, parseCsv, toCsv, download, pickFile, DAY_NAMES,
@@ -49,7 +50,8 @@ function role() {
 
 function showTab(name) {
   if (role() === 'driver') name = 'driver';
-  else if ((name === 'settings' || name === 'users') && role() !== 'admin') name = 'plan';
+  else if (['settings', 'users', 'trucks'].includes(name) && role() !== 'admin') name = 'plan';
+  if (name !== 'trucks') clearTimeout(trucksTimer);
   document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.panel').forEach((p) => (p.hidden = p.id !== 'tab-' + name));
   if (name === 'plan') {
@@ -62,6 +64,7 @@ function showTab(name) {
   if (name === 'settings') renderSettings();
   if (name === 'users') renderUsers();
   if (name === 'driver') renderDriverView();
+  if (name === 'trucks') renderTrucks();
 }
 
 function currentTab() {
@@ -482,9 +485,15 @@ function savePlan() {
     if (r.order.length) routes[driverName(i)] = routePayload(r, i);
   });
   store.saveRoutesDay(plan.date, routes);
+  // Real return times (from the truck or typed in History) are kept when the plan changes.
+  const before = store.getHistory()[plan.date]?.drivers || [];
   store.saveHistoryDay(plan.date, {
     drivers: ev.routes
-      .map((r, i) => ({ name: driverName(i), stops: r.order.length, paid: Math.round(r.paid), ot: Math.round(r.ot), miles: Math.round(r.miles * 10) / 10, back: Math.round(r.finish), labor: r.labor, fuel: r.fuel }))
+      .map((r, i) => {
+        const real = before.find((d) => d.name === driverName(i) && d.source);
+        const planned = { name: driverName(i), stops: r.order.length, paid: Math.round(r.paid), ot: Math.round(r.ot), miles: Math.round(r.miles * 10) / 10, back: Math.round(r.finish), labor: r.labor, fuel: r.fuel };
+        return real ? { ...planned, back: real.back, paid: real.paid, ot: real.ot, labor: real.labor, source: real.source } : planned;
+      })
       .filter((d) => d.stops),
     shiftStart: plan.shiftStart,
     stops: plan.stops.length,
@@ -900,7 +909,8 @@ function renderHistory() {
               <button class="link danger" data-del="${date}">Delete</button></span></div>
             <table><tbody>${(h.drivers || [])
               .map((d, i) => `<tr><td>${esc(d.name)}</td><td class="small">${d.stops} stops</td>
-                <td><label class="inline small">Back <input type="time" data-back="${i}" value="${fmtTimeInput(d.back)}" /></label></td>
+                <td><label class="inline small">Back <input type="time" data-back="${i}" value="${fmtTimeInput(d.back)}" /></label>
+                  <span class="muted small">${d.source === 'truck' ? '🚚 from truck' : d.source === 'manual' ? '✎ typed in' : 'planned'}</span></td>
                 <td class="small">${fmtHours(d.paid)} h${d.ot ? ` (${fmtHours(d.ot)} OT)` : ''}</td></tr>`)
               .join('')}</tbody></table>
           </div>`;
@@ -923,18 +933,18 @@ $('#week-of').addEventListener('change', (e) => {
 $('#btn-week-prev').addEventListener('click', () => { historyWeek = addDays(historyWeek, -7); renderHistory(); });
 $('#btn-week-next').addEventListener('click', () => { historyWeek = addDays(historyWeek, 7); renderHistory(); });
 
-// Correct a driver's actual return time; pay for that day is recalculated.
-$('#history-days').addEventListener('change', (e) => {
-  const input = e.target.closest('[data-back]');
-  if (!input) return;
-  const date = input.closest('[data-date]').dataset.date;
+// Set a driver's real return time for a day and recalculate that day's pay.
+// source: 'manual' (typed in History) or 'truck' (from Geotab; never overrides a typed time).
+function setActualBack(date, name, back, source) {
   const h = store.getHistory()[date];
-  const d = h.drivers[Number(input.dataset.back)];
-  const back = toMin(input.value);
-  if (back == null) return;
+  const d = h?.drivers?.find((x) => x.name === name);
+  if (!d || back == null) return false;
+  if (source === 'truck' && d.source === 'manual') return false;
+  if (d.source === source && Math.abs(d.back - back) < 1) return false;
   const rules = payRules();
   const shift = h.shiftStart ?? rules.shiftStart;
   d.back = back;
+  d.source = source;
   d.paid = Math.max(0, back - shift);
   const otAt = overtimeStart({ ...rules, shiftStart: shift, weekBeforeMin: minutesBefore(store.getHistory(), date, d.name) });
   d.ot = Math.max(0, Math.min(d.paid, back - otAt));
@@ -942,6 +952,15 @@ $('#history-days').addEventListener('change', (e) => {
   h.labor = h.drivers.reduce((a, x) => a + (x.labor || 0), 0);
   h.total = h.labor + (h.fuel || 0);
   store.saveHistoryDay(date, h);
+  return true;
+}
+
+$('#history-days').addEventListener('change', (e) => {
+  const input = e.target.closest('[data-back]');
+  if (!input) return;
+  const date = input.closest('[data-date]').dataset.date;
+  const d = store.getHistory()[date].drivers[Number(input.dataset.back)];
+  setActualBack(date, d.name, toMin(input.value), 'manual');
   renderHistory();
 });
 $('#history-days').addEventListener('click', (e) => {
@@ -1164,6 +1183,7 @@ const SETTING_FIELDS = [
 const NUMERIC = new Set(['depotLat', 'depotLng', 'payRate', 'regularHoursPerDay', 'regularHoursPerWeek', 'fuelPerMile', 'defaultUnload', 'monthlyElementLimit', 'monthlyGeocodeLimit']);
 
 function renderSettings() {
+  renderGeotabSettings();
   for (const f of SETTING_FIELDS) sform.elements[f].value = settings[f] ?? '';
   const u = store.getUsage();
   $('#usage-line').textContent =
@@ -1320,6 +1340,248 @@ $('#driver-days').addEventListener('click', (e) => {
   if (!b) return;
   driverDate = b.dataset.day;
   renderDriverView();
+});
+
+// ---------- Trucks tab (admin, MyGeotab) ----------
+
+let trucksMap = null;
+let trucksLayer = null;
+let trucksTimer = null;
+let geotabDeviceList = null;
+
+async function loadDevices() {
+  if (!geotabDeviceList) geotabDeviceList = (await api.call('geotabDevices')).devices;
+  return geotabDeviceList;
+}
+
+function localDayRange(date) {
+  const [y, m, d] = date.split('-').map(Number);
+  return { from: new Date(y, m - 1, d).toISOString(), to: new Date(y, m - 1, d + 1).toISOString() };
+}
+
+function stateText(t) {
+  if (!t) return '<span class="muted">No live position</span>';
+  const mins = Math.round(parseDuration(t.stateFor));
+  const age = (Date.now() - Date.parse(t.at)) / 60000;
+  if (!t.communicating || age > 30) return `<span class="tag warn">No signal</span> last seen ${fmtTime(minuteOfDay(Date.parse(t.at)))}`;
+  return t.driving
+    ? `<span class="tag good">Driving</span> ${Math.round(t.speed * 0.621371)} mph · for ${fmtDur(mins)}`
+    : `<span class="tag warn">Stopped</span> for ${fmtDur(mins)}`;
+}
+
+function timeOf(ms) {
+  return ms == null ? '—' : fmtTime(minuteOfDay(ms));
+}
+
+async function renderTrucks() {
+  clearTimeout(trucksTimer);
+  const status = (t) => ($('#trucks-status').textContent = t);
+  const note = $('#trucks-note');
+  if (!$('#trucks-date').value) $('#trucks-date').value = localDate();
+  const date = $('#trucks-date').value;
+  const today = date === localDate();
+  const pairs = settings.drivers.map((name) => [name, settings.trucks?.[name]]).filter(([, id]) => id);
+  status('Loading…');
+  try {
+    const st = await api.call('geotabStatus');
+    if (!st.connected) {
+      note.innerHTML = 'Geotab is not connected yet. Go to <a href="#" data-goto="settings">Settings → Truck tracking</a>.';
+      $('#truck-cards').innerHTML = '';
+      return status('');
+    }
+    if (!pairs.length) {
+      note.innerHTML = 'Pick which truck each driver drives in <a href="#" data-goto="settings">Settings → Truck tracking</a>.';
+      $('#truck-cards').innerHTML = '';
+      return status('');
+    }
+    const [devices, day, live] = await Promise.all([
+      loadDevices(),
+      api.call('geotabDay', { deviceIds: pairs.map(([, id]) => id), ...localDayRange(date) }),
+      today ? api.call('geotabLive') : Promise.resolve({ trucks: [] }),
+    ]);
+    const routes = store.getRoutes()[date]?.drivers || {};
+    const byId = new Map(clients.map((c) => [c.id, c]));
+    const depot = settings.depotLat == null ? null : { lat: Number(settings.depotLat), lng: Number(settings.depotLng) };
+    let historyChanged = false;
+    const rows = pairs.map(([name, id], i) => {
+      const route = routes[name];
+      const planned = (route?.stops || [])
+        .map((s) => {
+          const c = byId.get(s.id);
+          return c && hasLoc(c) ? { id: s.id, name: s.n, lat: Number(c.lat), lng: Number(c.lng), plannedArrive: s.t } : null;
+        })
+        .filter(Boolean);
+      const truck = day.trucks[id] || { trips: [], trail: [] };
+      const report = analyzeDay({ trips: truck.trips, depot, planned, radius: num(settings.geotabRadius, 200) });
+      if (report.back != null && setActualBack(date, name, Math.round(minuteOfDay(report.back)), 'truck')) historyChanged = true;
+      return {
+        name,
+        color: COLORS[i % COLORS.length],
+        device: devices.find((d) => d.id === id),
+        route,
+        report,
+        trail: truck.trail,
+        live: live.trucks.find((t) => t.id === id),
+      };
+    });
+    note.textContent = today
+      ? 'Live positions update every minute while this page is open. Return times feed into History automatically.'
+      : 'Return times from the trucks are used in History (unless someone typed a time there).';
+    if (historyChanged) note.textContent += ' History was updated with real return times.';
+    renderTrucksMap(rows, depot);
+    $('#truck-cards').innerHTML = rows.map(truckCard).join('');
+    status(`Updated ${fmtTime(minuteOfDay(Date.now()))}`);
+  } catch (err) {
+    if (err instanceof api.NotLoggedIn) return showLogin('Please log in again.');
+    status('');
+    note.innerHTML = `<span class="bad-text">${esc(err.message)}</span>`;
+  } finally {
+    if (today && currentTab() === 'trucks') trucksTimer = setTimeout(renderTrucks, 60000);
+  }
+}
+
+function truckCard(t) {
+  const r = t.report;
+  const visited = r.visits.filter((v) => v.visited).length;
+  const visitRows = r.visits
+    .map((v, n) => {
+      let tag = '<span class="tag">Not reached</span>';
+      if (v.visited) {
+        tag = v.lateBy > 10 ? `<span class="tag bad">${Math.round(v.lateBy)} min late</span>` : v.lateBy < -10 ? `<span class="tag">${Math.round(-v.lateBy)} min early</span>` : '<span class="tag good">On time</span>';
+      }
+      return `<tr><td>${n + 1}</td><td>${esc(v.name)}</td><td>${fmtTime(v.plannedArrive)}</td>
+        <td>${v.visited ? timeOf(v.arrive) : '—'}</td><td>${v.visited ? fmtDur(v.minutes) : ''}</td><td>${tag}</td></tr>`;
+    })
+    .join('');
+  const unplanned = r.unplanned
+    .map((u) => `<li>${timeOf(u.arrive)} · stopped ${fmtDur(u.minutes)} · <a href="https://www.google.com/maps?q=${u.lat},${u.lng}" target="_blank" rel="noopener">see place</a></li>`)
+    .join('');
+  return `<div class="card driver truck-card" style="--route:${t.color}">
+    <div class="row between"><h3>${esc(t.name)}</h3><span class="muted small">🚚 ${esc(t.device?.name || 'Unknown truck')}</span></div>
+    ${$('#trucks-date').value === localDate() ? `<div class="live">${stateText(t.live)}</div>` : ''}
+    <div class="stats">
+      <span>Left <b>${timeOf(r.left)}</b></span>
+      <span>Back <b>${r.back != null ? timeOf(r.back) : r.stillOut ? 'still out' : '—'}</b></span>
+      <span>Driving <b>${fmtDur(r.driveMin)}</b></span>
+      <span>Idling <b>${fmtDur(r.idleMin)}</b></span>
+      <span><b>${r.miles.toFixed(0)}</b> mi</span>
+      ${t.route ? `<span>Stops <b>${visited} of ${r.visits.length}</b></span>` : ''}
+    </div>
+    ${t.route ? `<div class="table-wrap"><table><thead><tr><th>#</th><th>Client</th><th>Planned</th><th>Arrived</th><th>Stayed</th><th></th></tr></thead><tbody>${visitRows}</tbody></table></div>` : '<p class="muted small">No planned route for this driver on this day.</p>'}
+    ${r.unplanned.length ? `<h4>Stops that weren't on the route (${r.unplanned.length})</h4><ul class="small">${unplanned}</ul>` : ''}
+  </div>`;
+}
+
+function renderTrucksMap(rows, depot) {
+  const el = $('#trucks-map');
+  if (!window.L) return (el.hidden = true);
+  if (!trucksMap) {
+    trucksMap = L.map(el);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(trucksMap);
+    trucksLayer = L.layerGroup().addTo(trucksMap);
+  }
+  trucksLayer.clearLayers();
+  const pts = [];
+  if (depot) {
+    pts.push([depot.lat, depot.lng]);
+    L.marker([depot.lat, depot.lng], { icon: L.divIcon({ className: '', html: '<div class="pin depot">W</div>', iconSize: [26, 26] }) }).addTo(trucksLayer);
+  }
+  for (const t of rows) {
+    if (t.trail.length > 1) L.polyline(t.trail, { color: t.color, weight: 3, opacity: 0.7 }).addTo(trucksLayer);
+    t.trail.forEach((p) => pts.push(p));
+    for (const v of t.report.visits) {
+      pts.push([v.lat, v.lng]);
+      L.marker([v.lat, v.lng], { icon: L.divIcon({ className: '', html: `<div class="plan-pin ${v.visited ? 'hit' : ''}" style="--route:${t.color}"></div>`, iconSize: [16, 16] }) })
+        .bindPopup(`<b>${esc(v.name)}</b><br>${esc(t.name)} · planned ${fmtTime(v.plannedArrive)}<br>${v.visited ? `arrived ${timeOf(v.arrive)}, stayed ${fmtDur(v.minutes)}` : 'not reached'}`)
+        .addTo(trucksLayer);
+    }
+    if (t.live && t.live.lat != null) {
+      pts.push([t.live.lat, t.live.lng]);
+      L.marker([t.live.lat, t.live.lng], {
+        icon: L.divIcon({ className: '', html: `<div class="truck-pin"><div class="dot" style="background:${t.color}">🚚</div><span class="label">${esc(t.name)}</span></div>`, iconSize: [28, 28], iconAnchor: [14, 14] }),
+        zIndexOffset: 2000,
+      })
+        .bindPopup(`<b>${esc(t.name)}</b> · ${esc(t.device?.name || '')}<br>${stateText(t.live)}`)
+        .addTo(trucksLayer);
+    }
+  }
+  setTimeout(() => {
+    trucksMap.invalidateSize();
+    if (pts.length) trucksMap.fitBounds(L.latLngBounds(pts), { padding: [30, 30], maxZoom: 14 });
+  }, 0);
+}
+
+$('#trucks-date').addEventListener('change', renderTrucks);
+$('#btn-trucks-refresh').addEventListener('click', renderTrucks);
+
+// Settings → Truck tracking
+async function renderGeotabSettings() {
+  $('#g-radius').value = num(settings.geotabRadius, 200);
+  let st;
+  try {
+    st = await api.call('geotabStatus');
+  } catch (err) {
+    $('#geotab-status').textContent = err.message;
+    return;
+  }
+  $('#btn-geotab-clear').hidden = !st.connected;
+  $('#btn-geotab-save').textContent = st.connected ? 'Change login' : 'Connect';
+  $('#truck-assign').hidden = !st.connected;
+  $('#geotab-status').innerHTML = st.connected ? `<span class="tag good">Connected</span> ${esc(st.userName)} · ${esc(st.database)}` : 'Not connected.';
+  if (st.connected) {
+    $('#g-server').value = st.server;
+    $('#g-database').value = st.database;
+    $('#g-user').value = st.userName;
+    try {
+      const devices = await loadDevices();
+      const names = settings.drivers.slice(0, Math.max(settings.driverCount + 1, ...settings.drivers.map((n, i) => (settings.trucks?.[n] ? i + 1 : 0))));
+      $('#truck-rows').innerHTML = names
+        .map((n) => `<tr><td>${esc(n)}</td><td><select data-truck="${esc(n)}"><option value="">— no truck —</option>${devices
+          .map((d) => `<option value="${esc(d.id)}" ${settings.trucks?.[n] === d.id ? 'selected' : ''}>${esc(d.name)}${d.plate ? ` (${esc(d.plate)})` : ''}</option>`)
+          .join('')}</select></td></tr>`)
+        .join('');
+    } catch (err) {
+      $('#truck-rows').innerHTML = `<tr><td class="bad-text">${esc(err.message)}</td></tr>`;
+    }
+  }
+}
+
+$('#btn-geotab-save').addEventListener('click', async (e) => {
+  const btn = e.target;
+  btn.disabled = true;
+  $('#geotab-status').textContent = 'Checking with Geotab…';
+  try {
+    await api.call('geotabSave', { server: $('#g-server').value, database: $('#g-database').value, userName: $('#g-user').value, password: $('#g-pass').value });
+    $('#g-pass').value = '';
+    geotabDeviceList = null;
+    await renderGeotabSettings();
+  } catch (err) {
+    $('#geotab-status').innerHTML = `<span class="bad-text">${esc(err.message)}</span>`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('#btn-geotab-clear').addEventListener('click', async () => {
+  if (!confirm('Disconnect Geotab? Truck tracking stops until you connect again.')) return;
+  await api.call('geotabSave', { clear: true });
+  geotabDeviceList = null;
+  renderGeotabSettings();
+});
+
+$('#truck-rows').addEventListener('change', (e) => {
+  const sel = e.target.closest('[data-truck]');
+  if (!sel) return;
+  settings.trucks = { ...(settings.trucks || {}), [sel.dataset.truck]: sel.value };
+  saveSettings();
+});
+
+$('#g-radius').addEventListener('change', (e) => {
+  settings.geotabRadius = num(e.target.value, 200);
+  saveSettings();
 });
 
 // ---------- Users tab (admin) ----------

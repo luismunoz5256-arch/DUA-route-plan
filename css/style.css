@@ -160,3 +160,20 @@ body[data-role='driver'] .tabs, body[data-role='driver'] #setup-banner { display
 body[data-role='driver'] main { padding: 0; }
 .driver-days { padding: 12px 12px 0; max-width: 640px; margin: 0 auto; }
 .tag.done { background: #dcefdf; color: var(--good); }
+
+/* Trucks tab */
+.truck-pin { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.truck-pin .dot { width: 28px; height: 28px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 15px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45); }
+.truck-pin .label { background: #fff; border-radius: 6px; padding: 1px 6px; font-size: 12px; font-weight: 700; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
+.plan-pin { width: 16px; height: 16px; border-radius: 50%; border: 3px solid var(--route); background: #fff; }
+.plan-pin.hit { background: var(--route); }
+.truck-card table { font-size: 0.85rem; }
+.truck-card td, .truck-card th { padding: 0.3rem 0.4rem; }
+.truck-card .live { font-size: 0.9rem; margin: 0.2rem 0 0.4rem; }
+.truck-card h4 { margin: 0.8rem 0 0.3rem; font-size: 0.9rem; }
+.tag.warn { background: #fde8c8; color: #8a4b00; }
+.truck-card li { display: list-item; border: 0; padding: 0.15rem 0; }
+.truck-card ul { padding-left: 1.2rem; margin: 0; }
+.truck-card td:nth-child(n + 3) { white-space: nowrap; }
+.truck-card .tag { white-space: nowrap; }
+#truck-cards { grid-template-columns: repeat(auto-fill, minmax(min(100%, 500px), 1fr)); }

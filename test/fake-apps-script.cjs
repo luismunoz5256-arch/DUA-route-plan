@@ -5,7 +5,8 @@ const path = require('path');
 const vm = require('vm');
 const crypto = require('crypto');
 
-exports.createServer = function createServer({ setupCode = 'test-setup-code' } = {}) {
+// geotab(method, params, host) can stand in for MyGeotab: return a result or throw { name, message }.
+exports.createServer = function createServer({ setupCode = 'test-setup-code', geotab = null } = {}) {
   const sheets = new Map();
   const properties = new Map();
 
@@ -47,6 +48,20 @@ exports.createServer = function createServer({ setupCode = 'test-setup-code' } =
       computeDigest: (alg, text) => [...crypto.createHash(alg).update(text, 'utf8').digest()].map((b) => (b > 127 ? b - 256 : b)),
     },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
+    UrlFetchApp: {
+      fetch(url, opts) {
+        const host = new URL(url).host;
+        const { method, params } = JSON.parse(opts.payload);
+        let body;
+        try {
+          body = { jsonrpc: '2.0', result: geotab(method, params, host) };
+        } catch (e) {
+          body = { jsonrpc: '2.0', error: { message: e.message, errors: [{ name: e.name, message: e.message }] } };
+        }
+        return { getContentText: () => JSON.stringify(body), getResponseCode: () => 200 };
+      },
+    },
     ContentService: {
       MimeType: { JSON: 'json' },
       createTextOutput: (text) => ({ setMimeType: () => ({ text }) }),

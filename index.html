@@ -39,6 +39,7 @@
         <button class="tab active" data-tab="plan">Plan routes</button>
         <button class="tab" data-tab="clients">Clients</button>
         <button class="tab" data-tab="history">History</button>
+        <button class="tab admin-only" data-tab="trucks">Trucks</button>
         <button class="tab admin-only" data-tab="users">Users</button>
         <button class="tab admin-only" data-tab="settings">Settings</button>
         <button class="tab" data-tab="help">Help</button>
@@ -58,6 +59,23 @@
       <section id="tab-driver" class="panel" hidden>
         <div class="row wrap gap small-gap driver-days" id="driver-days"></div>
         <div id="driver-route" class="route-view"></div>
+      </section>
+
+      <!-- TRUCKS (admin) -->
+      <section id="tab-trucks" class="panel" hidden>
+        <div class="card">
+          <div class="row wrap between">
+            <h2>Trucks</h2>
+            <div class="row wrap gap small-gap">
+              <label class="inline">Day <input type="date" id="trucks-date" /></label>
+              <button id="btn-trucks-refresh" class="secondary">Refresh</button>
+              <span id="trucks-status" class="muted small"></span>
+            </div>
+          </div>
+          <p id="trucks-note" class="muted small"></p>
+        </div>
+        <div id="trucks-map" class="card map"></div>
+        <div id="truck-cards" class="cards"></div>
       </section>
 
       <!-- USERS (admin) -->
@@ -257,6 +275,27 @@
           <div class="span2 row gap"><button class="primary" type="submit">Save settings</button><button type="button" class="secondary" id="btn-sync-now">Sync now</button><span id="settings-saved" class="muted"></span></div>
         </form>
 
+        <div class="card" id="geotab-card">
+          <h2>Truck tracking (MyGeotab)</h2>
+          <p class="muted small">Shows your trucks live on the Trucks tab, compares planned stops with where the trucks actually went, and uses real return times for weekly hours. The Geotab password is stored only on your Google Sheet server, never in browsers. Setup steps are in the README.</p>
+          <div class="grid-form" id="geotab-login">
+            <label>Server <input id="g-server" value="my.geotab.com" autocomplete="off" /></label>
+            <label>Database (company name in the MyGeotab address) <input id="g-database" autocomplete="off" /></label>
+            <label>Username <input id="g-user" autocomplete="off" autocapitalize="none" /></label>
+            <label>Password <input id="g-pass" type="password" autocomplete="new-password" /></label>
+          </div>
+          <div class="row wrap gap small-gap" style="margin-top: 0.8rem">
+            <button id="btn-geotab-save" class="primary">Connect</button>
+            <button id="btn-geotab-clear" class="secondary danger" hidden>Disconnect</button>
+            <span id="geotab-status" class="small"></span>
+          </div>
+          <div id="truck-assign" hidden>
+            <h3>Which truck does each driver drive?</h3>
+            <table class="drivers-table"><tbody id="truck-rows"></tbody></table>
+            <label class="inline small" style="margin-top: 0.6rem">Count a stop as reached within <input id="g-radius" type="number" min="50" max="1000" step="10" style="width: 5rem" /> meters</label>
+          </div>
+        </div>
+
         <div class="card">
           <h2>Saved drive times</h2>
           <p class="muted small" id="matrix-line"></p>
@@ -294,6 +333,11 @@
             <li><b>Secretary</b>: clients, today's stops, building and sending routes, History.</li>
             <li><b>Driver</b>: logs in on a phone and sees only their own route. Their <b>Done</b> ticks show on the office screen.</li>
             <li>Use <b>Change password</b> at the top to set your own password. <b>Log out</b> on shared computers and phones.</li>
+          </ul>
+          <h2>Trucks (admin)</h2>
+          <ul>
+            <li>With MyGeotab connected (Settings → Truck tracking), the <b>Trucks</b> tab shows each truck live, which planned stops it reached and when, how long it stayed, idle time, miles, and stops that weren't on the route.</li>
+            <li>Real return times go into <b>History</b> automatically (marked 🚚). A time typed in History always wins.</li>
           </ul>
           <h2>How cost is figured</h2>
           <ul>

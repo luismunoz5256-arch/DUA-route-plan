@@ -109,3 +109,86 @@ test('password hashes are stored, not passwords', () => {
     assert.equal(u.salt, undefined);
   }
 });
+
+// A tiny stand-in for MyGeotab.
+function fakeGeotab() {
+  const calls = [];
+  let sessionOk = true;
+  const fn = (method, params, host) => {
+    calls.push({ method, host, params });
+    if (method === 'Authenticate') {
+      if (params.password !== 'geo-pass') throw { name: 'InvalidUserException', message: 'Incorrect login credentials' };
+      sessionOk = true;
+      return { credentials: { database: params.database, userName: params.userName, sessionId: 's1' }, path: 'my5.geotab.com' };
+    }
+    if (!sessionOk || params.credentials?.sessionId !== 's1') throw { name: 'InvalidUserException', message: 'expired' };
+    if (method === 'Get' && params.typeName === 'Device') return [{ id: 'b2', name: 'Truck 2' }, { id: 'b1', name: 'Truck 1', licensePlate: 'ABC' }];
+    if (method === 'Get' && params.typeName === 'DeviceStatusInfo') {
+      return [{ device: { id: 'b1' }, latitude: 31.8, longitude: -106.4, speed: 30, isDriving: true, currentStateDuration: '00:05:00', dateTime: '2026-10-21T18:00:00Z' }];
+    }
+    if (method === 'ExecuteMultiCall') {
+      return params.calls.map((c) =>
+        c.params.typeName === 'Trip'
+          ? [{ start: '2026-10-21T17:30:00Z', stop: '2026-10-21T17:50:00Z', nextTripStart: '2026-10-21T18:05:00Z', stopPoint: { x: -106.4, y: 31.8 }, distance: 12, drivingDuration: '00:20:00', idlingDuration: '00:01:00', stopDuration: '00:15:00' }]
+          : Array.from({ length: 3000 }, (_, k) => ({ latitude: 31.7 + k / 1e5, longitude: -106.4 })),
+      );
+    }
+    throw { name: 'Error', message: 'unexpected ' + method };
+  };
+  return { fn, calls, expire: () => (sessionOk = false) };
+}
+
+function geotabServer() {
+  const g = fakeGeotab();
+  const s = createServer({ geotab: g.fn });
+  const admin = s.call({ action: 'setup', setupCode: 'test-setup-code', username: 'boss', password: 'secret123' }).token;
+  s.call({ action: 'saveUser', token: admin, user: { username: 'sec', role: 'secretary', password: 'secret123' } });
+  const sec = s.call({ action: 'login', username: 'sec', password: 'secret123' }).token;
+  return { s, g, admin, sec };
+}
+
+test('Geotab: wrong login is refused and nothing is saved', () => {
+  const { s, admin } = geotabServer();
+  const r = s.call({ action: 'geotabSave', token: admin, database: 'dua', userName: 'api@dua', password: 'nope' });
+  assert.match(r.error, /rejected the login/);
+  assert.equal(s.call({ action: 'geotabStatus', token: admin }).connected, false);
+});
+
+test('Geotab: connect, never return the password, and use the server Geotab points to', () => {
+  const { s, g, admin } = geotabServer();
+  const r = s.call({ action: 'geotabSave', token: admin, server: 'https://my.geotab.com/', database: 'dua', userName: 'api@dua', password: 'geo-pass' });
+  assert.deepEqual(r, { connected: true, database: 'dua', userName: 'api@dua', server: 'my.geotab.com' });
+  assert.equal(JSON.stringify(r).includes('geo-pass'), false);
+  const devices = s.call({ action: 'geotabDevices', token: admin }).devices;
+  assert.deepEqual(devices.map((d) => d.name), ['Truck 1', 'Truck 2']);
+  assert.equal(g.calls.at(-1).host, 'my5.geotab.com');
+});
+
+test('Geotab: live positions and a day of trips with a thinned GPS trail', () => {
+  const { s, admin } = geotabServer();
+  s.call({ action: 'geotabSave', token: admin, database: 'dua', userName: 'api@dua', password: 'geo-pass' });
+  const live = s.call({ action: 'geotabLive', token: admin }).trucks;
+  assert.equal(live[0].id, 'b1');
+  assert.equal(live[0].driving, true);
+  const day = s.call({ action: 'geotabDay', token: admin, deviceIds: ['b1'], from: '2026-10-21T06:00:00Z', to: '2026-10-22T06:00:00Z' });
+  const t = day.trucks.b1;
+  assert.equal(t.trips[0].lat, 31.8);
+  assert.equal(t.trips[0].stopFor, '00:15:00');
+  assert.ok(t.trail.length <= 800 && t.trail.length > 500, `trail ${t.trail.length}`);
+});
+
+test('Geotab: an expired session logs in again by itself', () => {
+  const { s, g, admin } = geotabServer();
+  s.call({ action: 'geotabSave', token: admin, database: 'dua', userName: 'api@dua', password: 'geo-pass' });
+  g.expire();
+  assert.equal(s.call({ action: 'geotabDevices', token: admin }).devices.length, 2);
+  assert.equal(g.calls.filter((c) => c.method === 'Authenticate').length, 2);
+});
+
+test('Geotab: only admins can use it', () => {
+  const { s, admin, sec } = geotabServer();
+  s.call({ action: 'geotabSave', token: admin, database: 'dua', userName: 'api@dua', password: 'geo-pass' });
+  for (const action of ['geotabStatus', 'geotabDevices', 'geotabLive', 'geotabDay', 'geotabSave']) {
+    assert.match(s.call({ action, token: sec }).error, /Not allowed/, action);
+  }
+});

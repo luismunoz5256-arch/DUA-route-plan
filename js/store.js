@@ -48,6 +48,8 @@ export const DEFAULT_SETTINGS = {
   driverCount: 3,
   drivers: ['Driver 1', 'Driver 2', 'Driver 3', 'Driver 4', 'Driver 5', 'Driver 6', 'Driver 7', 'Driver 8'],
   balance: 'low',
+  trucks: {}, // driver name -> Geotab device id
+  geotabRadius: 200,
 };
 
 // Settings that stay on this computer only (never synced or put in backups).

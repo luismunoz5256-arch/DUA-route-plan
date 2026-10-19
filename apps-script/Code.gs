@@ -8,6 +8,9 @@
 //   admin      everything, including settings and user accounts
 //   secretary  clients, daily stops, routes and history (cannot change settings or users)
 //   driver     only their own routes; can tick stops as done
+//
+// Optional: MyGeotab truck tracking (admin only). The Geotab login is entered in the
+// planner's Settings, kept in this script's properties, and never sent back to browsers.
 
 const SETUP_CODE = 'change-this-to-something-long';
 const SESSION_DAYS = 30;
@@ -70,6 +73,21 @@ function handle(req) {
     case 'deleteUser':
       requireRole(user, ['admin']);
       return withLock(() => deleteUser(user, req.username));
+    case 'geotabSave':
+      requireRole(user, ['admin']);
+      return geotabSave(req);
+    case 'geotabStatus':
+      requireRole(user, ['admin']);
+      return geotabStatus();
+    case 'geotabDevices':
+      requireRole(user, ['admin']);
+      return { devices: geotabDevices() };
+    case 'geotabLive':
+      requireRole(user, ['admin']);
+      return { trucks: geotabLive() };
+    case 'geotabDay':
+      requireRole(user, ['admin']);
+      return geotabDay(req);
   }
   throw new Error('Unknown action');
 }
@@ -261,6 +279,143 @@ function markDone(user, req) {
   else delete mine[req.stopId];
   save(data);
   return { done: mine };
+}
+
+// ---------- MyGeotab (JSON-RPC API, https://developers.geotab.com) ----------
+
+function geotabSave(req) {
+  if (req.clear) {
+    ['g_login', 'g_session'].forEach((k) => props().deleteProperty(k));
+    return { connected: false };
+  }
+  const login = {
+    server: String(req.server || 'my.geotab.com').replace(/^https?:\/\//, '').replace(/\/.*$/, '') || 'my.geotab.com',
+    database: String(req.database || '').trim(),
+    userName: String(req.userName || '').trim(),
+    password: String(req.password || ''),
+  };
+  if (!login.database || !login.userName || !login.password) throw new Error('Fill in database, username and password.');
+  geotabAuthenticate(login); // throws if wrong
+  props().setProperty('g_login', JSON.stringify(login));
+  return geotabStatus();
+}
+
+function geotabStatus() {
+  const raw = props().getProperty('g_login');
+  if (!raw) return { connected: false };
+  const login = JSON.parse(raw);
+  return { connected: true, database: login.database, userName: login.userName, server: login.server };
+}
+
+function geotabRpc(server, method, params) {
+  const res = UrlFetchApp.fetch('https://' + server + '/apis/', {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({ method: method, params: params }),
+    muteHttpExceptions: true,
+  });
+  let body;
+  try {
+    body = JSON.parse(res.getContentText());
+  } catch (err) {
+    throw new Error('Geotab did not answer (HTTP ' + res.getResponseCode() + ').');
+  }
+  if (body.error) {
+    const inner = (body.error.errors && body.error.errors[0]) || body.error.data || {};
+    const e = new Error('Geotab: ' + (inner.message || body.error.message || 'error'));
+    e.geotabName = inner.name || body.error.name || '';
+    throw e;
+  }
+  return body.result;
+}
+
+function geotabAuthenticate(login) {
+  let result;
+  try {
+    result = geotabRpc(login.server, 'Authenticate', { database: login.database, userName: login.userName, password: login.password });
+  } catch (err) {
+    if (/InvalidUser/.test(err.geotabName || '') || /incorrect|invalid/i.test(err.message)) {
+      throw new Error('Geotab rejected the login. Check database, username and password.');
+    }
+    throw err;
+  }
+  const session = { credentials: result.credentials, server: result.path && result.path !== 'ThisServer' ? result.path : login.server };
+  props().setProperty('g_session', JSON.stringify(session));
+  return session;
+}
+
+// Calls Geotab with the saved session, logging in again once if the session has expired.
+function geotab(method, params) {
+  const raw = props().getProperty('g_login');
+  if (!raw) throw new Error('Geotab is not connected yet (Settings → Truck tracking).');
+  const login = JSON.parse(raw);
+  let session = JSON.parse(props().getProperty('g_session') || 'null') || geotabAuthenticate(login);
+  try {
+    return geotabRpc(session.server, method, Object.assign({}, params, { credentials: session.credentials }));
+  } catch (err) {
+    if (!/InvalidUser/.test(err.geotabName || '')) throw err;
+    session = geotabAuthenticate(login);
+    return geotabRpc(session.server, method, Object.assign({}, params, { credentials: session.credentials }));
+  }
+}
+
+function geotabDevices() {
+  const devices = geotab('Get', { typeName: 'Device', search: { fromDate: new Date().toISOString() } }) || [];
+  return devices
+    .map((d) => ({ id: d.id, name: d.name || d.id, plate: d.licensePlate || '' }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function geotabLive() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('g_live');
+  if (hit) return JSON.parse(hit);
+  const rows = geotab('Get', { typeName: 'DeviceStatusInfo' }) || [];
+  const trucks = rows.map((r) => ({
+    id: r.device && r.device.id,
+    lat: r.latitude,
+    lng: r.longitude,
+    speed: r.speed || 0,
+    bearing: r.bearing || 0,
+    driving: !!r.isDriving,
+    communicating: r.isDeviceCommunicating !== false,
+    stateFor: r.currentStateDuration || '',
+    at: r.dateTime,
+  }));
+  cache.put('g_live', JSON.stringify(trucks), 30);
+  return trucks;
+}
+
+// Trips (with stops between them) and a thinned GPS trail for each truck, for one day.
+function geotabDay(req) {
+  const ids = (req.deviceIds || []).slice(0, 20);
+  if (!ids.length) return { trucks: {} };
+  const calls = [];
+  ids.forEach((id) => {
+    const search = { deviceSearch: { id: id }, fromDate: req.from, toDate: req.to };
+    calls.push({ method: 'Get', params: { typeName: 'Trip', search: Object.assign({ includeOverlappedTrips: true }, search) } });
+    calls.push({ method: 'Get', params: { typeName: 'LogRecord', search: search, resultsLimit: 20000 } });
+  });
+  const results = geotab('ExecuteMultiCall', { calls: calls });
+  const trucks = {};
+  ids.forEach((id, i) => {
+    const trips = (results[i * 2] || []).map((t) => ({
+      start: t.start,
+      stop: t.stop,
+      nextStart: t.nextTripStart || null,
+      driving: t.drivingDuration || '',
+      idling: t.idlingDuration || '',
+      stopFor: t.stopDuration || '',
+      km: t.distance || 0,
+      lat: t.stopPoint ? t.stopPoint.y : null,
+      lng: t.stopPoint ? t.stopPoint.x : null,
+    }));
+    const logs = results[i * 2 + 1] || [];
+    const step = Math.max(1, Math.ceil(logs.length / 800));
+    const trail = logs.filter((_, k) => k % step === 0).map((l) => [l.latitude, l.longitude]);
+    trucks[id] = { trips: trips, trail: trail };
+  });
+  return { trucks: trucks };
 }
 
 // ---------- Storage ----------
