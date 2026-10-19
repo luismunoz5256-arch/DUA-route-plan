@@ -288,9 +288,11 @@ function geotabSave(req) {
     ['g_login', 'g_session'].forEach((k) => props().deleteProperty(k));
     return { connected: false };
   }
+  const where = geotabAddress(req.server);
   const login = {
-    server: String(req.server || 'my.geotab.com').replace(/^https?:\/\//, '').replace(/\/.*$/, '') || 'my.geotab.com',
-    database: String(req.database || '').trim(),
+    server: where.host,
+    // Someone may paste the whole MyGeotab address into the database box too.
+    database: (/geotab\./i.test(req.database || '') ? geotabAddress(req.database).database : String(req.database || '').trim()) || where.database,
     userName: String(req.userName || '').trim(),
     password: String(req.password || ''),
   };
@@ -298,6 +300,17 @@ function geotabSave(req) {
   geotabAuthenticate(login); // throws if wrong
   props().setProperty('g_login', JSON.stringify(login));
   return geotabStatus();
+}
+
+// Accepts "my.geotab.com", "my123.geotab.com" or a whole MyGeotab address pasted from the
+// browser (https://my.geotab.com/dua_produce/#map…). Anything that isn't a MyGeotab server
+// (geotab.com, www.geotab.com, mygeotab.com…) becomes my.geotab.com, which works for every account.
+function geotabAddress(input) {
+  const text = String(input || '').trim().toLowerCase().replace(/^https?:\/\//, '');
+  const host = text.split(/[/?#]/)[0];
+  const database = (text.split('#')[0].split('/')[1] || '').trim();
+  const ok = /^my[0-9]*\.geotab\.[a-z.]+$/.test(host);
+  return { host: ok ? host : 'my.geotab.com', database: database };
 }
 
 function geotabStatus() {
@@ -308,7 +321,8 @@ function geotabStatus() {
 }
 
 function geotabRpc(server, method, params) {
-  const res = UrlFetchApp.fetch('https://' + server + '/apis/', {
+  const url = 'https://' + server + '/apis/';
+  const res = UrlFetchApp.fetch(url, {
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify({ method: method, params: params }),
@@ -318,7 +332,7 @@ function geotabRpc(server, method, params) {
   try {
     body = JSON.parse(res.getContentText());
   } catch (err) {
-    throw new Error('Geotab did not answer (HTTP ' + res.getResponseCode() + ').');
+    throw new Error('Geotab did not answer at ' + url + ' (HTTP ' + res.getResponseCode() + '). The Server box should say my.geotab.com.');
   }
   if (body.error) {
     const inner = (body.error.errors && body.error.errors[0]) || body.error.data || {};

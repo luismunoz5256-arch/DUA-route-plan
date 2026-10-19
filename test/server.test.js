@@ -192,3 +192,28 @@ test('Geotab: only admins can use it', () => {
     assert.match(s.call({ action, token: sec }).error, /Not allowed/, action);
   }
 });
+
+test('Geotab: server box accepts a pasted MyGeotab address or a wrong website', () => {
+  for (const [server, host, database] of [
+    ['https://my.geotab.com/dua_produce/#map,liveVehicleIds:all', 'my.geotab.com', 'dua_produce'],
+    ['  My.Geotab.com  ', 'my.geotab.com', ''],
+    ['my457.geotab.com', 'my457.geotab.com', ''],
+    ['geotab.com', 'my.geotab.com', ''],
+    ['www.geotab.com', 'my.geotab.com', ''],
+    ['mygeotab.com', 'my.geotab.com', ''],
+    ['', 'my.geotab.com', ''],
+  ]) {
+    const { s, g, admin } = geotabServer();
+    const r = s.call({ action: 'geotabSave', token: admin, server, database: database ? '' : 'dua', userName: 'api@dua', password: 'geo-pass' });
+    assert.equal(r.error, undefined, server);
+    assert.equal(g.calls[0].host, host, server);
+    assert.equal(r.database, database || 'dua', server);
+  }
+});
+
+test('Geotab: a MyGeotab address pasted into the database box still works', () => {
+  const { s, g, admin } = geotabServer();
+  const r = s.call({ action: 'geotabSave', token: admin, server: 'my.geotab.com', database: 'https://my.geotab.com/dua_produce/#dashboard', userName: 'api@dua', password: 'geo-pass' });
+  assert.equal(r.database, 'dua_produce');
+  assert.equal(g.calls[0].params.database, 'dua_produce');
+});
