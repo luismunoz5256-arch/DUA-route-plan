@@ -23,12 +23,21 @@ export function renderRoute(el, route, done, onToggle) {
       <div>${esc(showDate(route.date))} · ${t('leave {time}', { time: fmtTime(route.leave) })} · ${t('back about {time}', { time: fmtTime(route.back) })}</div>
       <div class="progress">${t('{n} of {total} stops done', { n: count, total: route.stops.length })}</div></div>`,
   ];
+  // Until orders close the list is for loading; the driving order is set after that.
+  if (route.f === 0 && route.stops.length) {
+    html.push(`<div class="load-note">📦 ${route.c ? t('Load these stops. More orders may be added until {time}; the driving order is set after that.', { time: fmtTime(route.c) }) : t('Load these stops. The driving order is set when orders close.')}</div>`);
+  } else if (route.f === 1) {
+    html.push(`<div class="load-note final">✓ ${t('Final driving order.')}</div>`);
+  }
+  if (route.g?.length) {
+    html.push(`<div class="gone"><b>${t('Taken off your route — do not deliver:')}</b> ${route.g.map(esc).join(', ')}</div>`);
+  }
   route.stops.forEach((s, i) => {
     const isDone = !!done[key(s, i)];
     html.push(`<div class="stop ${isDone ? 'done' : ''}">
       <div class="num">${i + 1}</div>
       <div>
-        <div><span class="time">${fmtTime(s.t)}</span> ${s.p ? `<span class="prio">${t('Priority · by {time}', { time: fmtTime(s.p) })}</span>` : ''}</div>
+        <div><span class="time">${fmtTime(s.t)}</span> ${s.x ? `<span class="new">${t('New')}</span>` : ''} ${s.p ? `<span class="prio">${t('Priority · by {time}', { time: fmtTime(s.p) })}</span>` : ''}</div>
         <div class="name">${esc(s.n)}</div>
         <div class="addr">${esc(s.a)}</div>
         ${s.o ? `<div class="note">📝 ${esc(s.o)}</div>` : ''}

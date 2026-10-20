@@ -148,3 +148,40 @@ test('insertStop can be limited to one driver', () => {
   assert.deepEqual(out[0], [1, 2]);
   assert.deepEqual(out[2], [5]);
 });
+
+const routeOf = (orders) => {
+  const where = [null];
+  orders.forEach((o, r) => o.forEach((i) => (where[i] = r)));
+  return where;
+};
+
+test('regular clients stay with their usual driver unless moving saves more than the set amount', () => {
+  const base = makeProblem({ n: 20, vehicles: 3, seed: 7 });
+  // Usual drivers from an unrelated split (round robin), so the cheapest plan disagrees with them.
+  const home = [null, ...Array.from({ length: 20 }, (_, i) => i % 3)];
+  const free = solve(base, { timeLimitMs: 300 });
+  const sticky = solve({ ...base, home, away: 1000 }, { timeLimitMs: 300 });
+  const where = routeOf(sticky.routes.map((r) => r.order));
+  for (let i = 1; i <= 20; i++) assert.equal(where[i], home[i], `stop ${i} left its usual driver`);
+  // A small preference lets some stops move, and the result is never cheaper than the free plan.
+  const some = solve({ ...base, home, away: 5 }, { timeLimitMs: 300 });
+  const moved = routeOf(some.routes.map((r) => r.order)).filter((r, i) => i && r !== home[i]).length;
+  assert.ok(moved > 0 && moved < 20);
+  assert.ok(some.paidMinutes >= free.paidMinutes - 1);
+});
+
+test('locked stops stay on their truck and only the driving order changes', () => {
+  const p = makeProblem({ n: 15, vehicles: 3, seed: 3 });
+  const given = [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10], [11, 12, 13, 14, 15]];
+  const lock = routeOf(given);
+  const r = solve({ ...p, lock }, { timeLimitMs: 300 });
+  r.routes.forEach((x, k) => assert.deepEqual([...x.order].sort((a, b) => a - b), given[k]));
+  assert.ok(r.paidMinutes <= summarize(given, p).paidMinutes + 1e-9);
+});
+
+test('insertStop prefers the usual driver of a new order', () => {
+  const p = makeProblem({ n: 6, vehicles: 2 });
+  const home = [null, null, null, null, null, null, 1];
+  const out = insertStop([[1, 2, 3], [4, 5]], { ...p, home, away: 1000 }, 6);
+  assert.ok(out[1].includes(6));
+});

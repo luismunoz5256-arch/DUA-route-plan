@@ -129,6 +129,15 @@ table.week td.num, table.week th.num { text-align: right; }
 .tag.prio, .tag.warn { background: #fde8c8; color: #8a4b00; }
 .tag.new { background: #dbe8fb; color: #1f4f9c; }
 
+.live-note { background: #eef4fb; border: 1px solid #c4d7ee; border-radius: 8px; padding: 0.55rem 0.8rem; margin-bottom: 0.7rem; font-size: 0.9rem; }
+.live-note p { margin: 0; }
+.live-note #live-msg:not(:empty) { margin-top: 0.35rem; font-weight: 500; }
+.tag.on-route { background: var(--route); color: #fff; }
+#final-card h2 { margin: 0; }
+#final-note { margin: 0.6rem 0 0; }
+.suggest { margin-top: 0.7rem; padding: 0.7rem 0.9rem; border-radius: 8px; background: var(--warn-bg); border: 1px solid var(--warn-line); }
+.suggest p { margin: 0 0 0.4rem; }
+.suggest ul { margin: 0 0 0.6rem; padding-left: 1.2rem; }
 .best-hint { margin: 0.7rem 0 0; padding: 0.6rem 0.8rem; border-radius: 8px; background: var(--brand-soft); color: var(--good); font-weight: 600; }
 .best-hint button.link { font-weight: 600; }
 
@@ -228,8 +237,7 @@ body[data-role='driver'] main { padding: 0; }
   .card > .row.between > .row > input[type='search'] { flex: 1 1 100%; }
   .noprint.row.between { flex-direction: column; align-items: stretch; }
   .noprint.row.between > .row > button { flex: 1; }
-  #add-stop-card .row > select { flex: 1 1 100%; }
-  #add-stop-card .row > button { flex: 1 1 100%; }
+  #final-card .row.between > button { width: 100%; }
 
   .build-row { position: sticky; bottom: 0; z-index: 900; margin: 0 -0.75rem 0.75rem; padding: 0.6rem 0.75rem calc(0.6rem + env(safe-area-inset-bottom)); background: rgba(243, 245, 242, 0.94); backdrop-filter: blur(6px); border-top: 1px solid var(--line); flex-wrap: wrap; gap: 0.4rem; }
   .build-row button.big { width: 100%; }

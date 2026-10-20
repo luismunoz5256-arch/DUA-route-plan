@@ -14,6 +14,9 @@ function fromBase64Url(s) {
 
 // route: { driver, date, leave, back, depot: {n, a}, stops: [{ n, a, t, p, o }] }
 //   n = name, a = address, t = arrival (minutes), p = priority deadline (minutes) or 0, o = notes
+//   x = 1 when added after the driver first got the list
+// Also: f = 1 when the driving order is final (0 = still taking orders), c = when orders close (minutes),
+//   g = names of stops taken off this driver's list
 export function encodeRoute(route) {
   return toBase64Url(JSON.stringify(route));
 }

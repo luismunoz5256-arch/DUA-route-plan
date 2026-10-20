@@ -1,7 +1,7 @@
 import * as store from './store.js';
 import { geocode } from './google.js';
 import { missingPlan, fillMissing, assemble, nextTrafficDeparture } from './matrix.js';
-import { solve, summarize, insertStop } from './solver.js';
+import { solve, summarize, insertStop, costOf } from './solver.js';
 import { overtimeStart, laborCost, minutesBefore, weekSummary, recordReturn } from './pay.js';
 import { encodeRoute } from './share.js';
 import { initSync, syncNow } from './sync.js';
@@ -37,6 +37,28 @@ const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true
 const depotName = () => settings.depotName || t('Warehouse');
 const depotPoint = () => (settings.depotLat == null ? null : { lat: Number(settings.depotLat), lng: Number(settings.depotLng) });
 const plural = (n, one, many) => t(n === 1 ? one : many, { n });
+
+// The driver each client usually gets, learned from routes sent before `date`: whoever took them
+// most in the last 30 days, if at least twice and at least half the time.
+function usualDrivers(date = planDate) {
+  const counts = {};
+  for (const [d, day] of Object.entries(store.getRoutes())) {
+    if (d >= date) continue;
+    for (const [name, route] of Object.entries(day.drivers || {})) {
+      for (const s of route.stops || []) if (s.id) (counts[s.id] ||= {})[name] = (counts[s.id][name] || 0) + 1;
+    }
+  }
+  const out = new Map();
+  for (const [id, c] of Object.entries(counts)) {
+    const [name, n] = Object.entries(c).sort((a, b) => b[1] - a[1])[0];
+    const total = Object.values(c).reduce((a, b) => a + b, 0);
+    if (n >= 2 && n * 2 >= total) out.set(id, name);
+  }
+  return out;
+}
+
+// A client's usual driver: set by hand on the client, else learned from past routes.
+const homeOf = (c, learned) => c.homeDriver || learned.get(c.id) || '';
 
 function fmtDateLong(date) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
@@ -253,16 +275,38 @@ function saveReturns(entries, source) {
 }
 
 // Solver problem for one driver count, built from the saved plan.
+// Each stop prefers its usual driver; giving it to someone else costs the "keep with usual driver" amount.
 function problemFor(p, k) {
+  const perMinute = p.payRate / 60;
+  const index = (name) => {
+    const i = settings.drivers.indexOf(name);
+    return i >= 0 && i < k ? i : null;
+  };
   return {
     ...p.problem,
     shiftStart: p.shiftStart,
     start: p.start,
     endBy: p.endBy,
     otAt: p.otAt.slice(0, k),
-    fuelPerMile: p.payRate ? p.fuelPerMile / (p.payRate / 60) : 0,
+    fuelPerMile: p.payRate ? p.fuelPerMile / perMinute : 0,
     vehicles: k,
+    home: [null, ...p.stops.map((s) => (s.home ? index(s.home) : null))],
+    away: perMinute ? num(settings.keepWithDriver, 10) / perMinute : 0,
   };
+}
+
+// Route index of every stop in a set of routes (index 0, the warehouse, has none).
+function routeIndex(orders) {
+  const where = [null];
+  orders.forEach((o, r) => o.forEach((i) => (where[i] = r)));
+  return where;
+}
+
+// Client id -> driver name in the plan's current option.
+function assignedDrivers(p) {
+  const out = new Map();
+  if (p) viewOption(p).orders.forEach((o, r) => o.forEach((i) => out.set(p.stops[i - 1].id, driverName(r))));
+  return out;
 }
 
 // Times, pay and fuel for one option (driver count) of the plan.
@@ -304,6 +348,8 @@ function loadDay(date) {
   planDate = date;
   day = store.getDay(date) || newDay(date);
   day.weekHours ||= {};
+  plan = store.getPlan(date);
+  suggestion = null;
   $('#plan-shift').value = day.shiftStart || settings.shiftStart;
   $('#plan-start').value = day.start || settings.start;
   $('#plan-end').value = day.latestReturn || settings.latestReturn;
@@ -352,12 +398,24 @@ function renderStops() {
     .filter((c) => !q || c.name.toLowerCase().includes(q) || (c.address || '').toLowerCase().includes(q))
     .sort((a, b) => isScheduled(b, weekday) - isScheduled(a, weekday) || byName(a, b));
   $('#no-clients').hidden = clients.length > 0;
+  const learned = usualDrivers();
+  const assigned = assignedDrivers(plan);
+  const k = plan ? viewOption().k : settings.driverCount;
+  // On a route: that driver, in the route's colour. Otherwise: who usually takes them.
+  const driverTag = (c) => {
+    const on = assigned.get(c.id);
+    if (on) return ` <span class="tag on-route" style="--route:${COLORS[settings.drivers.indexOf(on) % COLORS.length]}">🚚 ${esc(on)}</span>`;
+    const home = homeOf(c, learned);
+    return home ? ` <span class="tag">${t('usually {name}', { name: esc(home) })}</span>` : '';
+  };
+  $('#live-note').hidden = !plan;
+  if (plan) $('#live-note-text').textContent = t('Routes for this day are out. Checking a stop puts it on a truck right away (its usual driver when that makes sense); unchecking takes it off. Other stops never move.');
   $('#stop-rows').innerHTML = list
     .map((c) => {
       const s = day.selected[c.id];
       return `<tr data-id="${esc(c.id)}" class="${s ? 'selected' : ''}">
         <td class="pick"><input type="checkbox" data-f="on" ${s ? 'checked' : ''} aria-label="${esc(c.name)}" /></td>
-        <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ` <span class="tag good">${t('regular today')}</span>` : ''}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</div></td>
+        <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ` <span class="tag good">${t('regular today')}</span>` : ''}${driverTag(c)}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</div></td>
         <td class="small"${label('Usual days')}>${esc(daysText(c.days))}</td>
         <td class="small"${label('Unload')}>${num(c.unload, settings.defaultUnload)} min</td>
         <td class="prio"${label('Priority')}><input type="checkbox" data-f="priority" ${s?.priority ? 'checked' : ''} ${s ? '' : 'disabled'} aria-label="${t('Priority')}" /></td>
@@ -386,6 +444,7 @@ function onStopEdit(e) {
     else delete day.selected[id];
     saveDay();
     renderStops();
+    if (plan) (e.target.checked ? addToPlan : removeFromPlan)(id);
     return;
   }
   const s = day.selected[id];
@@ -396,9 +455,14 @@ function onStopEdit(e) {
   } else if (f === 'by') s.by = e.target.value;
   else if (f === 'note') s.note = e.target.value;
   saveDay();
+  if (e.type === 'change') updatePlannedStop(id);
 }
 
-$('#plan-date').addEventListener('change', (e) => e.target.value && loadDay(e.target.value));
+$('#plan-date').addEventListener('change', (e) => {
+  if (!e.target.value) return;
+  loadDay(e.target.value);
+  renderResults();
+});
 for (const [id, field] of [['#plan-shift', 'shiftStart'], ['#plan-start', 'start'], ['#plan-end', 'latestReturn']]) {
   $(id).addEventListener('change', (e) => {
     day[field] = e.target.value;
@@ -436,29 +500,37 @@ function renameDriver(i, name) {
     delete settings.trucks[old];
   }
   saveSettings();
+  // So does being someone's usual driver.
+  const theirs = clients.filter((c) => old && c.homeDriver === old);
+  for (const c of theirs) c.homeDriver = name;
+  if (theirs.length) saveClients();
   if (plan) renderResults();
 }
 
 $('#stop-search').addEventListener('input', renderStops);
 $('#btn-select-scheduled').addEventListener('click', () => {
   const weekday = weekdayOf(planDate);
-  for (const c of clients) if (isScheduled(c, weekday) && !day.selected[c.id]) day.selected[c.id] = newSelection();
+  const added = clients.filter((c) => isScheduled(c, weekday) && !day.selected[c.id]);
+  for (const c of added) day.selected[c.id] = newSelection();
   saveDay();
   renderStops();
+  if (plan) for (const c of added) addToPlan(c.id);
 });
 $('#btn-select-none').addEventListener('click', () => {
-  if (!confirm(t('Uncheck all stops for this day?'))) return;
+  if (!confirm(plan ? t('Uncheck all stops for this day? They also come off the routes already sent to drivers.') : t('Uncheck all stops for this day?'))) return;
+  const ids = Object.keys(day.selected);
   day.selected = {};
   saveDay();
   renderStops();
+  if (plan) for (const id of ids) removeFromPlan(id);
 });
 $('#btn-optimize').addEventListener('click', buildRoutes);
 
-function stopFromClient(c, sel) {
+function stopFromClient(c, sel, home = '') {
   const prio = sel.priority ? toMin(sel.by || settings.priorityBy) : null;
   const close = toMin(c.close);
   return {
-    id: c.id, name: c.name, address: c.address, lat: Number(c.lat), lng: Number(c.lng),
+    id: c.id, name: c.name, address: c.address, lat: Number(c.lat), lng: Number(c.lng), home,
     unload: num(c.unload, settings.defaultUnload), notes: c.notes || '', today: sel.note || '',
     priority: !!sel.priority, by: sel.priority ? sel.by || settings.priorityBy : '',
     open: toMin(c.open), due: prio == null ? close : close == null ? prio : Math.min(prio, close),
@@ -496,7 +568,12 @@ async function buildRoutes() {
         alert(t('These clients have no map location yet. Open them in the Clients tab and click Find (or type the latitude/longitude):') + '\n\n' + stillMissing.map((c) => '• ' + c.name).join('\n'));
         return;
       }
-      const stops = chosen.map((c) => stopFromClient(c, day.selected[c.id]));
+      // Rebuilding a plan that already went out keeps each stop with the driver it has now
+      // (unless moving saves more than the set amount); new stops go to their usual driver.
+      const old = plan?.date === planDate ? plan : null;
+      const current = assignedDrivers(old);
+      const learned = usualDrivers();
+      const stops = chosen.map((c) => stopFromClient(c, day.selected[c.id], current.get(c.id) || homeOf(c, learned)));
       const tables = await tablesFor(depot, stops, status);
       const rules = payRules();
       const history = store.getHistory();
@@ -539,6 +616,9 @@ async function buildRoutes() {
       }
       // Show the number of drivers that was asked for; a cheaper count is offered, not forced.
       plan.view = k;
+      // What the drivers were first told stays the yardstick for "new" and "taken off" on their phones.
+      plan.sent = old?.sent || sentNow();
+      suggestion = null;
       savePlan();
       renderResults();
       status(t('Done in {s} s.', { s: ((performance.now() - t0) / 1000).toFixed(1) }));
@@ -553,7 +633,7 @@ async function buildRoutes() {
 
 // Saves the plan, publishes each driver's route, and records the viewed plan in History.
 function savePlan() {
-  store.saveLastPlan(plan);
+  store.savePlan(plan);
   const ev = evaluate(plan, viewOption());
   const routes = {};
   ev.routes.forEach((r, i) => {
@@ -576,11 +656,21 @@ function savePlan() {
 
 // ---------- Results ----------
 
-function viewOption() {
-  return plan.options.find((o) => o.k === plan.view) || plan.options[0];
+function viewOption(p = plan) {
+  return p.options.find((o) => o.k === p.view) || p.options[0];
+}
+
+// Each driver's stops as sent right now: { driverName: [{ id, n }] }.
+function sentNow() {
+  const out = {};
+  viewOption().orders.forEach((o, r) => {
+    out[driverName(r)] = o.map((i) => ({ id: plan.stops[i - 1].id, n: plan.stops[i - 1].name }));
+  });
+  return out;
 }
 
 function renderResults() {
+  renderStops(); // each stop shows the driver it's on
   if (!plan) {
     $('#results').hidden = true;
     return;
@@ -646,7 +736,7 @@ function renderResults() {
   renderRouteMap(ev);
   const done = store.getDone()[plan.date] || {};
   $('#driver-cards').innerHTML = ev.routes.map((r, i) => driverCard(r, i, view.k, done[driverName(i)] || {})).join('');
-  renderAddStop();
+  renderFinal();
 }
 
 // Click a row of the comparison (or "Show that plan") to switch to that number of drivers.
@@ -654,6 +744,8 @@ function viewDrivers(e) {
   const el = e.target.closest('[data-k]');
   if (!el) return;
   plan.view = Number(el.dataset.k);
+  plan.sent = sentNow(); // a different number of drivers starts a new list for everyone
+  suggestion = null;
   savePlan();
   renderResults();
 }
@@ -697,13 +789,21 @@ function routeLinks(r) {
 
 // One driver's route, packed for the driver phone page and the driver login.
 // The date stays as YYYY-MM-DD so each phone shows it in its own language.
+// x = added since the driver first got the list; g = stops taken off their list;
+// f = driving order is final; c = when orders close.
 function routePayload(r, i) {
+  const sent = plan.sent?.[driverName(i)];
+  const ids = new Set(r.order.map((idx) => plan.stops[idx - 1].id));
+  const gone = (sent || []).filter((s) => !ids.has(s.id)).map((s) => s.n);
   return {
     driver: driverName(i),
     date: plan.date,
     leave: Math.round(plan.start),
     back: Math.round(r.finish),
     depot: { n: plan.depot.name, a: plan.depot.address },
+    f: plan.final ? 1 : 0,
+    c: toMin(settings.orderCutoff) ?? 0,
+    ...(gone.length ? { g: gone } : {}),
     stops: r.order.map((idx, n) => {
       const s = plan.stops[idx - 1];
       return {
@@ -713,6 +813,7 @@ function routePayload(r, i) {
         t: Math.round(r.stops[n].arrive),
         p: s.priority ? toMin(s.by) : 0,
         o: [s.notes, s.today].filter(Boolean).join(' · '),
+        ...(sent && !sent.some((x) => x.id === s.id) ? { x: 1 } : {}),
       };
     }),
   };
@@ -847,57 +948,174 @@ function giveStop(r, n, to) {
   afterEdit(opt);
 }
 
-// ---------- Add a late order ----------
+// ---------- Orders after the routes went out ----------
+// Once a day's routes are built, checking a stop puts it on a truck right away (the cheapest
+// spot, preferring the client's usual driver) and unchecking takes it off. Nobody else moves,
+// so drivers can load as orders come in. When orders close, "Set final driving order" works out
+// each driver's best order without moving any stop to another truck.
 
-function renderAddStop() {
-  const inPlan = new Set(plan.stops.map((s) => s.id));
-  const list = clients.filter((c) => c.active !== false && !inPlan.has(c.id)).sort(byName);
-  const sel = $('#add-client');
-  const keep = sel.value;
-  sel.innerHTML = `<option value="">${t('Choose a client…')}</option>` + list.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
-  sel.value = list.some((c) => c.id === keep) ? keep : '';
-  if (!$('#add-by').value) $('#add-by').value = settings.priorityBy;
+let planQueue = Promise.resolve();
+let suggestion = null; // moves "Set final driving order" found worth making: { k, orders, saves, moves }
+
+// Plan changes run one at a time, in the order they were asked for.
+function queuePlan(work) {
+  planQueue = planQueue.then(work).catch((err) => {
+    console.error(err);
+    liveMsg(errorText(err));
+  });
+  return planQueue;
 }
 
-$('#btn-add-stop').addEventListener('click', (e) => {
-  const c = clients.find((x) => x.id === $('#add-client').value);
-  if (!c) return alert(t('Choose a client to add.'));
-  busy(e.target, async (status) => {
-    try {
-      await locateClients([c], status);
-      if (!hasLoc(c)) return alert(t('{name} has no map location yet. Open it in the Clients tab and click Find.', { name: c.name }));
-      const sel = { priority: $('#add-priority').checked, by: $('#add-by').value, note: '' };
-      const stop = { ...stopFromClient(c, sel), added: true };
-      const stops = [...plan.stops, stop];
-      const tables = await tablesFor(plan.depot, stops, status);
-      plan.stops = stops;
-      plan.problem = {
-        time: tables.time,
-        dist: tables.dist,
-        service: [...plan.problem.service, stop.unload],
-        open: [...plan.problem.open, stop.open],
-        due: [...plan.problem.due, stop.due],
-      };
-      plan.source = { ...plan.source, ...tables.source };
-      const idx = stops.length;
-      const nowMin = plan.date === localDate() ? minuteOfDay(Date.now()) : -1;
-      for (const opt of plan.options) {
-        const p = problemFor(plan, opt.k);
-        // Stops whose planned arrival has passed are treated as done.
-        const ev = summarize(opt.orders, p);
-        const minPos = ev.routes.map((r) => r.stops.filter((s) => s.arrive <= nowMin).length);
-        opt.orders = insertStop(opt.orders, p, idx, minPos);
-      }
-      day.selected[c.id] = sel;
-      saveDay();
-      savePlan();
-      renderResults();
-      renderStops();
-      $('#add-priority').checked = false;
-    } catch (err) {
-      alert(t('Could not add the stop:') + ' ' + err.message);
+function liveMsg(html) {
+  $('#live-msg').innerHTML = html;
+}
+
+// Removes stop `idx` (1-based) from a plan, renumbering the rest.
+function dropStop(p, idx) {
+  const keep = (row) => row.filter((_, j) => j !== idx);
+  p.stops.splice(idx - 1, 1);
+  for (const [key, v] of Object.entries(p.problem)) p.problem[key] = Array.isArray(v[0]) ? keep(v).map(keep) : keep(v);
+  const fix = (orders) => orders.map((o) => o.filter((x) => x !== idx).map((x) => (x > idx ? x - 1 : x)));
+  for (const opt of p.options) {
+    opt.orders = fix(opt.orders);
+    opt.original = fix(opt.original);
+  }
+}
+
+function addToPlan(id) {
+  return queuePlan(async () => {
+    const c = clients.find((x) => x.id === id);
+    if (!plan || !c || !day.selected[id] || plan.stops.some((s) => s.id === id)) return;
+    await locateClients([c], liveMsg);
+    if (!hasLoc(c)) return liveMsg(errorText(new Error(t('{name} has no map location yet. Open it in the Clients tab and click Find.', { name: c.name }))));
+    const stop = { ...stopFromClient(c, day.selected[id], homeOf(c, usualDrivers())), added: true };
+    const stops = [...plan.stops, stop];
+    const tables = await tablesFor(plan.depot, stops, liveMsg);
+    if (!plan || !day.selected[id] || plan.stops.some((s) => s.id === id)) return; // changed while looking up
+    plan.stops = stops;
+    plan.problem = {
+      time: tables.time,
+      dist: tables.dist,
+      service: [...plan.problem.service, stop.unload],
+      open: [...plan.problem.open, stop.open],
+      due: [...plan.problem.due, stop.due],
+    };
+    plan.source = { ...plan.source, ...tables.source };
+    const idx = stops.length;
+    const nowMin = plan.date === localDate() ? minuteOfDay(Date.now()) : -1;
+    for (const opt of plan.options) {
+      const p = problemFor(plan, opt.k);
+      // Stops whose planned arrival has passed are treated as done.
+      const ev = summarize(opt.orders, p);
+      const minPos = ev.routes.map((r) => r.stops.filter((s) => s.arrive <= nowMin).length);
+      opt.orders = insertStop(opt.orders, p, idx, minPos);
     }
+    suggestion = null;
+    savePlan();
+    renderResults();
+    const r = viewOption().orders.findIndex((o) => o.includes(idx));
+    liveMsg(`✓ ${t('{name} → {driver}. It shows on their phone as new.', { name: esc(c.name), driver: `<b>${esc(driverName(r))}</b>` })}`);
   });
+}
+
+function removeFromPlan(id) {
+  return queuePlan(async () => {
+    const idx = plan ? plan.stops.findIndex((s) => s.id === id) + 1 : 0;
+    if (!idx || day.selected[id]) return;
+    const name = plan.stops[idx - 1].name;
+    const r = viewOption().orders.findIndex((o) => o.includes(idx));
+    dropStop(plan, idx);
+    suggestion = null;
+    savePlan();
+    renderResults();
+    liveMsg(t('{name} taken off {driver}\'s route. Their phone says not to deliver it.', { name: esc(name), driver: `<b>${esc(driverName(r))}</b>` }));
+  });
+}
+
+// Priority, deliver-by time and today's note follow the stop onto its route.
+function updatePlannedStop(id) {
+  const idx = plan ? plan.stops.findIndex((s) => s.id === id) + 1 : 0;
+  const c = clients.find((x) => x.id === id);
+  if (!idx || !c || !day.selected[id]) return;
+  const s = plan.stops[idx - 1];
+  const fresh = stopFromClient(c, day.selected[id], s.home);
+  Object.assign(s, { priority: fresh.priority, by: fresh.by, today: fresh.today, due: fresh.due });
+  plan.problem.due[idx] = fresh.due;
+  savePlan();
+  renderResults();
+}
+
+// ---------- Final driving order ----------
+
+function renderFinal() {
+  const cutoff = toMin(settings.orderCutoff);
+  const closed = plan.date < localDate() || (plan.date === localDate() && cutoff != null && minuteOfDay(Date.now()) >= cutoff);
+  const btn = $('#btn-final');
+  btn.className = plan.final ? 'secondary' : closed ? 'primary' : 'secondary';
+  $('#final-note').innerHTML = plan.final
+    ? `✓ ${t('Final driving order set at {time}. Every stop stayed on its truck.', { time: fmtTime(minuteOfDay(plan.final)) })} ${t('Click again after more changes.')}`
+    : cutoff != null && closed
+      ? `<b>${t('Orders closed at {time}.', { time: fmtTime(cutoff) })}</b> ${t('Click to give every driver their best driving order and times. No stop moves to another truck.')}`
+      : cutoff != null
+        ? t('Until orders close at {time}, drivers see the stops to load. Then click this: no stop moves to another truck, and each driver gets the best driving order and times.', { time: fmtTime(cutoff) })
+        : t('When orders close, click this: no stop moves to another truck, and each driver gets the best driving order and times.');
+  const box = $('#final-suggest');
+  box.hidden = !suggestion || suggestion.k !== viewOption().k;
+  if (!box.hidden) {
+    box.innerHTML = `<p><b>${t('Moving {n} stop(s) to another truck would save {amount} more:', { n: suggestion.moves.length, amount: fmtMoney(suggestion.saves) })}</b></p>
+      <ul>${suggestion.moves.map((m) => `<li>${esc(m.name)}: ${esc(m.from)} → ${esc(m.to)}</li>`).join('')}</ul>
+      <p class="muted small">${t('Only do this if those orders are not loaded yet. The drivers\' phones will show the change.')}</p>
+      <div class="row wrap small-gap"><button class="primary" data-suggest="apply">${t('Move them')}</button><button class="secondary" data-suggest="skip">${t('Keep as is')}</button></div>`;
+  }
+}
+
+async function setFinalOrder(btn) {
+  await planQueue;
+  await busy(btn, async (status) => {
+    const weights = { balance: BALANCE[settings.balance] ?? 0.15 };
+    status(t('Working…'));
+    for (const opt of plan.options) {
+      if (!opt.orders.flat().length) continue;
+      const p = { ...problemFor(plan, opt.k), lock: routeIndex(opt.orders) };
+      const r = await runSolve(p, { timeLimitMs: 1500, weights });
+      const orders = r.routes.map((x) => x.order);
+      if (costOf(orders, p, weights) < costOf(opt.orders, p, weights) - 1e-6) opt.orders = orders;
+    }
+    // Would moving a few stops between trucks be worth it? Only suggested (when all the moves
+    // together save more than the "keep with usual driver" amount), never done on its own.
+    // Each move is charged $2 in the search so it only moves stops that clearly help.
+    const view = viewOption();
+    suggestion = null;
+    if (view.k > 1 && view.orders.flat().length) {
+      const p = problemFor(plan, view.k);
+      const r = await runSolve({ ...p, home: routeIndex(view.orders), away: 120 / plan.payRate }, { timeLimitMs: 2000, weights });
+      const orders = r.routes.map((x) => x.order);
+      const saves = evaluate(plan, view).total - evaluate(plan, { k: view.k, orders }).total;
+      const before = routeIndex(view.orders);
+      const after = routeIndex(orders);
+      const moves = [];
+      for (let i = 1; i < before.length; i++) {
+        if (before[i] !== after[i]) moves.push({ name: plan.stops[i - 1].name, from: driverName(before[i]), to: driverName(after[i]) });
+      }
+      if (moves.length && saves >= Math.max(0.5, num(settings.keepWithDriver, 10))) suggestion = { k: view.k, orders, saves, moves };
+    }
+    plan.final = Date.now();
+    savePlan();
+    renderResults();
+  });
+}
+
+$('#btn-final').addEventListener('click', (e) => setFinalOrder(e.currentTarget));
+$('#final-suggest').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-suggest]');
+  if (!b) return;
+  const view = viewOption();
+  if (b.dataset.suggest === 'apply' && suggestion?.k === view.k) {
+    view.orders = suggestion.orders.map((o) => o.slice());
+    savePlan();
+  }
+  suggestion = null;
+  renderResults();
 });
 
 $('#btn-print').addEventListener('click', () => window.print());
@@ -1046,6 +1264,7 @@ $('#history-days').addEventListener('click', (e) => {
 
 function renderClients() {
   const q = $('#client-search').value.trim().toLowerCase();
+  const learned = usualDrivers(localDate());
   const list = clients.filter((c) => !q || c.name.toLowerCase().includes(q) || (c.address || '').toLowerCase().includes(q)).sort(byName);
   $('#client-count').textContent = `(${clients.length})`;
   $('#client-rows').innerHTML = list
@@ -1054,6 +1273,7 @@ function renderClients() {
       <td class="name">${esc(c.name)}</td>
       <td class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</td>
       <td class="small"${label('Days')}>${esc(daysText(c.days))}</td>
+      <td class="small"${label('Usual driver')}>${c.homeDriver ? esc(c.homeDriver) : learned.has(c.id) ? `${esc(learned.get(c.id))} <span class="muted">${t('(auto)')}</span>` : '—'}</td>
       <td class="small"${label('Unload')}>${num(c.unload, settings.defaultUnload)} min</td>
       <td class="small"${label('Hours')}>${c.open || c.close ? `${c.open ? fmtTime(toMin(c.open)) : '…'} – ${c.close ? fmtTime(toMin(c.close)) : '…'}` : ''}</td>
       <td class="small"${label('Notes')}>${esc(c.notes || '')}</td>
@@ -1088,7 +1308,11 @@ function openClient(c) {
   $('#client-dialog-title').textContent = c ? t('Edit client') : t('Add client');
   cform.reset();
   const v = c || { unload: settings.defaultUnload, days: [false, true, true, true, true, true, false] };
-  for (const f of ['name', 'address', 'lat', 'lng', 'unload', 'open', 'close', 'notes']) cform.elements[f].value = v[f] ?? '';
+  const learned = c ? usualDrivers(localDate()).get(c.id) : '';
+  cform.elements.homeDriver.innerHTML =
+    `<option value="">${learned ? t('Automatic (now {name})', { name: esc(learned) }) : t('Automatic (from past routes)')}</option>` +
+    [...new Set([...settings.drivers.slice(0, MAX_DRIVERS), v.homeDriver].filter(Boolean))].map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  for (const f of ['name', 'address', 'lat', 'lng', 'unload', 'open', 'close', 'notes', 'homeDriver']) cform.elements[f].value = v[f] ?? '';
   cform.querySelectorAll('[data-day]').forEach((cb) => (cb.checked = !!v.days?.[cb.dataset.day]));
   $('#client-locate-msg').textContent = '';
   dialog.showModal();
@@ -1138,6 +1362,7 @@ cform.addEventListener('submit', async (e) => {
     open: el.open.value,
     close: el.close.value,
     notes: el.notes.value.trim(),
+    homeDriver: el.homeDriver.value,
     days: [...cform.querySelectorAll('[data-day]')].map((cb) => cb.checked),
   };
   if (editing) Object.assign(editing, data);
@@ -1242,9 +1467,9 @@ const sform = $('#settings-form');
 const SETTING_FIELDS = [
   'depotName', 'depotAddress', 'depotLat', 'depotLng', 'shiftStart', 'start', 'latestReturn', 'payRate',
   'regularHoursPerDay', 'regularHoursPerWeek', 'fuelPerMile', 'defaultUnload', 'priorityBy', 'apiKey',
-  'trafficTime', 'monthlyElementLimit', 'monthlyGeocodeLimit',
+  'trafficTime', 'monthlyElementLimit', 'monthlyGeocodeLimit', 'orderCutoff', 'keepWithDriver',
 ];
-const NUMERIC = new Set(['depotLat', 'depotLng', 'payRate', 'regularHoursPerDay', 'regularHoursPerWeek', 'fuelPerMile', 'defaultUnload', 'monthlyElementLimit', 'monthlyGeocodeLimit']);
+const NUMERIC = new Set(['depotLat', 'depotLng', 'payRate', 'regularHoursPerDay', 'regularHoursPerWeek', 'fuelPerMile', 'defaultUnload', 'monthlyElementLimit', 'monthlyGeocodeLimit', 'keepWithDriver']);
 const DEPOT_LOC = ['depotAddress', 'depotLat', 'depotLng'];
 
 function renderSettings() {
@@ -1345,13 +1570,19 @@ function reloadFromStore() {
   if (role() === 'driver') return renderDriverView();
   renderPlanControls();
   renderBanner();
+  // Another computer may have picked stops or changed the routes for this day.
+  day = store.getDay(planDate) || day;
+  if (day) day.weekHours ||= {};
+  const shared = store.getPlan(planDate);
+  if (shared?.updated !== plan?.updated) suggestion = null;
+  plan = shared;
   const tab = currentTab();
   if (tab === 'settings') renderSettings();
   else if (tab === 'clients') renderClients();
   else if (tab === 'history') renderHistory();
   renderStops();
   renderDriverRows();
-  if (plan && tab === 'plan') renderResults();
+  if (tab === 'plan') renderResults();
 }
 
 // ---------- Driver login view ----------
@@ -1824,8 +2055,6 @@ async function enterApp(user) {
   settings = store.getSettings();
   clients = store.getClients();
   if (user.role === 'driver') return showTab('driver');
-  plan = store.getLastPlan();
-  if (plan && !plan.problem) plan = null; // saved by an older version
   renderPlanControls();
   loadDay(planDate);
   renderBanner();

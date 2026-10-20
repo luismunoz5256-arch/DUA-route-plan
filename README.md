@@ -83,7 +83,7 @@ Logins and all shared data live in a Google Sheet you own. It runs a small scrip
 | Role | Can do |
 |---|---|
 | **Admin** | Everything: clients, daily stops, routes, history, **Settings** (pay, warehouse, Google key) and **Users** (add or remove people, reset passwords) |
-| **Secretary** | Clients, daily stops, build and send routes, hand edits, late orders, History. Can't change Settings or Users. |
+| **Secretary** | Clients, daily stops, build and send routes, hand edits, orders that come in after the routes went out, History. Can't change Settings or Users. |
 | **Driver** | Logs in on a phone and sees **only their own route**, with Navigate and Done. Done ticks show up in the office as "✓ Done 1:42 PM". |
 
 One-time setup (about 10 minutes):
@@ -161,15 +161,25 @@ A stop counts as reached when the truck stops within 200 meters of the client's 
 4. In **Compare driver counts**, see labor (with overtime), fuel and total for one driver fewer, the number you asked for, and one more. You see the plan for the number of drivers you picked. The cheapest workable plan is marked **Best**; click its row (or **Show that plan**) to switch to it.
 5. Adjust if needed: ▲ ▼ reorders a stop, **Move to…** gives it to another driver.
 6. Send each driver their **phone link** (**Copy phone link** or **Copy for text**), or **Print route sheets**.
-7. A late order comes in? Use **Add a late order**.
+7. Orders keep coming in after the routes went out? Just check the stop (see below).
 8. At the end of the day, if someone came back much later or earlier than planned, fix their **Back** time in **History** so the week's hours and overtime stay right.
+
+### Loading while orders come in
+
+Drivers load their trucks in the morning, but orders come in until 10:00. So the plan is built in steps instead of all at 10:00:
+
+1. **First thing in the morning, build the routes** with the regular clients. Each client stays with their **usual driver** unless giving them to someone else saves more than the amount in Settings ($10 by default). A client's usual driver is set on the client (**Usual driver**), or learned from the last 30 days of routes. Drivers know most of their stops at 8:00 and can start loading.
+2. **As orders come in, check the stop.** It goes straight onto a truck (the cheapest spot, preferring the client's usual driver) and shows as **New** on that driver's phone. Unchecking a stop takes it off, and the driver's phone lists it under "do not deliver". Nobody else's stops move. Any office computer can do this; they all share the same plan.
+3. **When orders close** (Settings → Orders close at, 10:00 by default), click **Set final driving order**. No stop moves to another truck; each driver gets the best driving order and arrival times, and their phone says the order is final. If moving a few stops between trucks would save more than the Settings amount, the app lists them and you choose **Move them** (only if those orders aren't loaded yet) or **Keep as is**.
+
+Driver phones check for changes every couple of minutes (and whenever the app is reopened).
 
 ---
 
 ## How it works (technical)
 
 - `index.html`, `css/`, `js/`: a static site, no build step. The map is [Leaflet](https://leafletjs.com/) with OpenStreetMap tiles, kept in `vendor/`.
-- `js/solver.js`: a vehicle-routing optimizer with time windows. It removes a few stops at a time and re-inserts them where they cost least ("ruin and recreate"), accepts some worse moves early on (simulated annealing), then does a 2-opt clean-up. It minimizes pay (from clock-in, with per-driver overtime start) plus fuel, with heavy penalties for late stops and returns past the latest-return time, and a weight for uneven finish times. It runs in a Web Worker, taking about 2 seconds per driver count.
+- `js/solver.js`: a vehicle-routing optimizer with time windows. It removes a few stops at a time and re-inserts them where they cost least ("ruin and recreate"), accepts some worse moves early on (simulated annealing), then does a 2-opt clean-up. It minimizes pay (from clock-in, with per-driver overtime start) plus fuel, with heavy penalties for late stops and returns past the latest-return time, and a weight for uneven finish times. Each stop can have a usual driver (a cost per stop given to someone else) or be locked to a truck (for the final driving order). It runs in a Web Worker, taking about 2 seconds per driver count.
 - `js/pay.js`: overtime rules and weekly hour totals.
 - `driver.html` and `js/driver.js`: the driver phone page. The route is packed into the link after `#`, so it never touches a server.
 - `apps-script/Code.gs`: the server. It handles logins (salted SHA-256, 30-day sessions, lockout after repeated failures), role checks, shared data and drivers' done ticks. `test/fake-apps-script.cjs` runs it in Node for the tests.

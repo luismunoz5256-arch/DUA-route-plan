@@ -1,5 +1,5 @@
 // Everything is saved in this browser's localStorage and, through sync.js, in the
-// Google Sheet server (clients, settings, history, drive times, published routes).
+// Google Sheet server (clients, settings, history, drive times, picked stops, plans, published routes).
 // Nothing is sent to GitHub.
 import { localDate } from './util.js';
 import { t } from './i18n.js';
@@ -43,6 +43,8 @@ export const DEFAULT_SETTINGS = {
   fuelPerMile: 0.3,
   defaultUnload: 10,
   priorityBy: '13:00',
+  orderCutoff: '10:00', // orders after this time are late; then the driving order is set
+  keepWithDriver: 10, // $: a client stays with their usual driver unless moving them saves more
   trafficTime: '12:30',
   monthlyElementLimit: 4000,
   monthlyGeocodeLimit: 2000,
@@ -106,18 +108,41 @@ export function saveMatrixCache(m) {
   changed();
 }
 
-export function getDay(date) {
-  return read('day.' + date, null);
-}
-export function saveDay(date, day) {
-  write('day.' + date, day);
+// Keeps only the newest `n` dates of a { date: ... } object.
+function keepLast(all, n) {
+  for (const d of Object.keys(all).sort().slice(0, -n)) delete all[d];
+  return all;
 }
 
-export function getLastPlan() {
-  return read('lastPlan', null);
+// Stops picked for each day (shared, so every office computer sees the same orders):
+// { "2026-10-21": { updated, selected: { clientId: { priority, by, note } }, shiftStart, start, latestReturn, weekHours } }
+export function getDays() {
+  return read('days', {});
 }
-export function saveLastPlan(plan) {
-  write('lastPlan', plan);
+export function getDay(date) {
+  return getDays()[date] || read('day.' + date, null); // day.<date> = saved by an older version
+}
+export function saveDay(date, day) {
+  write('days', keepLast({ ...getDays(), [date]: { ...day, updated: Date.now() } }, 14));
+  changed();
+}
+
+// Built plans (shared, so an order typed on any office computer goes onto the routes):
+// { "2026-10-21": plan } — see buildRoutes in app.js for the shape.
+export function getPlans() {
+  const plans = read('plans', {});
+  const old = read('lastPlan', null); // saved by an older version
+  if (old?.problem && !plans[old.date]) plans[old.date] = old;
+  return plans;
+}
+export function getPlan(date) {
+  return getPlans()[date] || null;
+}
+export function savePlan(plan) {
+  plan.updated = Date.now();
+  write('plans', keepLast({ ...getPlans(), [plan.date]: plan }, 5));
+  localStorage.removeItem(PREFIX + 'lastPlan');
+  changed();
 }
 
 // Route history: { "2026-10-19": { updated, shiftStart, stops, miles, drivers: [{ name, stops, paid, back, miles, source }] } }
@@ -189,6 +214,8 @@ export function exportSyncData() {
     settingsUpdated: read('settingsUpdated', 0),
     routes: getRoutes(),
     done: getDone(),
+    days: getDays(),
+    plans: getPlans(),
   };
 }
 // Writes merged data without announcing a change (that would start another sync).
@@ -203,6 +230,8 @@ export function importSyncData(data) {
   write('matrix', data.matrix || {});
   write('routes', data.routes || {});
   write('done', data.done || {});
+  write('days', data.days || {});
+  write('plans', data.plans || {});
 }
 
 // Drivers only receive their own routes.

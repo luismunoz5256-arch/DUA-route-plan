@@ -153,6 +153,10 @@
               <button id="btn-select-none" class="secondary">Clear</button>
             </div>
           </div>
+          <div id="live-note" class="live-note" hidden>
+            <p id="live-note-text"></p>
+            <p id="live-msg" aria-live="polite"></p>
+          </div>
           <div class="table-wrap">
             <table class="stops stack">
               <thead>
@@ -188,6 +192,14 @@
             <p id="best-hint" class="best-hint" hidden></p>
             <p id="data-note" class="muted small"></p>
           </div>
+          <div class="card noprint" id="final-card">
+            <div class="row wrap between">
+              <h2>Driving order</h2>
+              <button id="btn-final" class="secondary">Set final driving order</button>
+            </div>
+            <p id="final-note" class="muted small"></p>
+            <div id="final-suggest" class="suggest" hidden></div>
+          </div>
           <div class="row wrap between noprint">
             <h2 id="plan-title"></h2>
             <div class="row gap small-gap">
@@ -196,17 +208,6 @@
             </div>
           </div>
           <div id="map" class="card map noprint"></div>
-
-          <div class="card noprint" id="add-stop-card">
-            <h2>Add a late order</h2>
-            <p class="muted small">Adds the stop to the cheapest spot in the routes above without reshuffling anyone. If the plan is for today, stops already passed (by planned time) are left alone.</p>
-            <div class="row wrap gap small-gap">
-              <select id="add-client" class="grow"></select>
-              <label class="inline"><input type="checkbox" id="add-priority" /> Priority by</label>
-              <input type="time" id="add-by" />
-              <button id="btn-add-stop" class="primary">Add to routes</button>
-            </div>
-          </div>
 
           <div id="driver-cards" class="cards"></div>
         </div>
@@ -228,7 +229,7 @@
           <div class="table-wrap">
             <table class="clients stack">
               <thead>
-                <tr><th>Name</th><th>Address</th><th>Days</th><th>Unload</th><th>Hours</th><th>Notes</th><th></th></tr>
+                <tr><th>Name</th><th>Address</th><th>Days</th><th>Usual driver</th><th>Unload</th><th>Hours</th><th>Notes</th><th></th></tr>
               </thead>
               <tbody id="client-rows"></tbody>
             </table>
@@ -286,6 +287,11 @@
           <span></span>
           <label>Default unload time (min) <input name="defaultUnload" type="number" min="0" /></label>
           <label>Priority stops: deliver by <input name="priorityBy" type="time" /></label>
+
+          <h2>Orders &amp; usual drivers</h2>
+          <label>Orders close at <input name="orderCutoff" type="time" /></label>
+          <label>Keep a client with their usual driver unless moving saves more than ($) <input name="keepWithDriver" type="number" step="1" min="0" /></label>
+          <p class="span2 muted small">After routes are built, new orders go straight onto a truck so drivers can load while orders come in. At closing time the app sets each driver's best driving order without moving stops between trucks.</p>
 
           <h2>Google Maps</h2>
           <label class="span2">API key (shared with admin and secretary logins, never with drivers)
@@ -352,7 +358,14 @@
             <li>Choose the number of drivers. Check each driver's hours so far this week (filled in from History).</li>
             <li>Click <b>Build routes</b>. You see the plan for the number of drivers you picked. <b>Compare driver counts</b> also shows one driver fewer and one more, with labor (overtime at 1.5×) and fuel. The cheapest on-time plan is marked <span class="tag good">Best</span>; click its row (or <b>Show that plan</b>) to switch to it.</li>
             <li>Need a change? Use ▲ ▼ to reorder a stop, or <b>Move to</b> to give it to another driver. Times and cost update right away.</li>
-            <li>Drivers see their route as soon as they log in on their phone (or send a <b>phone link</b> / print the sheets). Late order? Use <b>Add a late order</b> — drivers get the update within a couple of minutes.</li>
+            <li>Drivers see their route as soon as they log in on their phone (or send a <b>phone link</b> / print the sheets).</li>
+          </ol>
+          <h2>Loading while orders come in</h2>
+          <ol>
+            <li>Build the routes first thing in the morning with the regulars. Each client stays with their <b>usual driver</b> (set on the client, or learned from past routes) unless moving them saves more than the amount in Settings. Drivers can start loading right away.</li>
+            <li>As orders come in, just check the stop. It goes onto a truck immediately and shows as <span class="tag new">New</span> on that driver's phone. Unchecking a stop takes it off, and the driver's phone says not to deliver it. Nobody else's stops move.</li>
+            <li>When orders close (10:00 by default, in Settings), click <b>Set final driving order</b>. Every stop stays on its truck; each driver gets the best order and times. If moving a few stops would save real money, the app suggests it and you decide.</li>
+            <li>Drivers' phones check for changes every couple of minutes.</li>
           </ol>
           <h2>Accounts</h2>
           <ul>
@@ -395,7 +408,14 @@
             <li>Elija el número de choferes. Revise las horas de cada chofer en lo que va de la semana (vienen del Historial).</li>
             <li>Haga clic en <b>Crear rutas</b>. Verá el plan con el número de choferes que eligió. <b>Comparar número de choferes</b> también muestra un chofer menos y uno más, con mano de obra (tiempo extra a 1.5×) y combustible. El plan más barato a tiempo está marcado como <span class="tag good">Mejor</span>; haga clic en su fila (o en <b>Ver ese plan</b>) para cambiar a él.</li>
             <li>¿Necesita un cambio? Use ▲ ▼ para reordenar una parada, o <b>Mover a…</b> para dársela a otro chofer. Las horas y el costo se actualizan al instante.</li>
-            <li>Los choferes ven su ruta en cuanto entran en su teléfono (o envíe el <b>enlace para teléfono</b> / imprima las hojas). ¿Pedido de último momento? Use <b>Agregar un pedido tarde</b>; los choferes ven el cambio en un par de minutos.</li>
+            <li>Los choferes ven su ruta en cuanto entran en su teléfono (o envíe el <b>enlace para teléfono</b> / imprima las hojas).</li>
+          </ol>
+          <h2>Cargar mientras llegan pedidos</h2>
+          <ol>
+            <li>Cree las rutas temprano en la mañana con los clientes de siempre. Cada cliente se queda con su <b>chofer de siempre</b> (puesto en el cliente, o aprendido de rutas anteriores) salvo que cambiarlo ahorre más de la cantidad en Ajustes. Los choferes pueden empezar a cargar de inmediato.</li>
+            <li>Cuando llegue un pedido, solo marque la parada. Se asigna a un camión al instante y aparece como <span class="tag new">Nueva</span> en el teléfono de ese chofer. Al desmarcarla se quita, y el teléfono del chofer indica que no la entregue. Las paradas de los demás no se mueven.</li>
+            <li>Cuando cierren los pedidos (10:00 por defecto, en Ajustes), haga clic en <b>Fijar orden final de manejo</b>. Cada parada se queda en su camión; cada chofer recibe el mejor orden y horarios. Si cambiar algunas paradas ahorra dinero de verdad, la aplicación lo sugiere y usted decide.</li>
+            <li>Los teléfonos de los choferes revisan cambios cada par de minutos.</li>
           </ol>
           <h2>Cuentas</h2>
           <ul>
@@ -448,7 +468,7 @@
           <div id="client-days" class="row wrap gap small-gap"></div>
         </fieldset>
         <label>Unload time (min) <input name="unload" type="number" min="0" /></label>
-        <span></span>
+        <label>Usual driver <select name="homeDriver"></select></label>
         <label>Earliest delivery (optional) <input name="open" type="time" /></label>
         <label>Latest delivery (optional) <input name="close" type="time" /></label>
         <label class="span2">Notes for driver <input name="notes" placeholder="e.g. back door, ask for Maria" /></label>

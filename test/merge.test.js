@@ -55,3 +55,12 @@ test('published routes merge by date and done ticks come from the server copy', 
   assert.ok(m.routes.d0);
   assert.deepEqual(m.done, b.done);
 });
+
+test('picked stops and plans merge by date, newest wins', () => {
+  const a = { ...base, days: { d1: { updated: 5, selected: { c1: {} } } }, plans: { d1: { updated: 1, k: 'old' } } };
+  const b = { ...base, days: { d1: { updated: 3, selected: {} }, d2: { updated: 1 } }, plans: { d1: { updated: 2, k: 'new' } } };
+  const m = mergeData(a, b);
+  assert.deepEqual(Object.keys(m.days.d1.selected), ['c1']);
+  assert.ok(m.days.d2);
+  assert.equal(m.plans.d1.k, 'new');
+});

@@ -12,17 +12,22 @@
 //   otAt[r]      time after which driver r is on overtime (1.5x pay); optional
 //   fuelPerMile  fuel cost per mile, expressed in minutes of regular pay
 //   vehicles     number of drivers
+//   home[i]      usual driver (route index) of stop i, or null; optional
+//   away         cost (minutes of pay) of giving a stop to someone other than its usual driver
+//   lock[i]      route index stop i must stay on (already loaded on that truck), or null; optional
 //
 // Objective, in minutes of regular pay (lower is better):
 //   sum over drivers used: (back - shiftStart) + 0.5 x overtime minutes + fuel
 //   + heavy penalty per minute a stop is late or a driver is back after endBy
 //   + balance weight x (latest finish - earliest finish)
 //   + penalty for a driver with no stops
+//   + away x stops not with their usual driver (so regulars keep their driver unless moving saves more)
 //
 // Search: ruin-and-recreate (remove a few stops, re-insert them at the cheapest
 // spots) with simulated-annealing acceptance, then a 2-opt polish.
 
 export const DEFAULT_WEIGHTS = { late: 100, pastEnd: 100, balance: 0.15, empty: 500 };
+const LOCKED = 1e6;
 
 export function makeRng(seed) {
   let a = seed >>> 0;
@@ -101,10 +106,13 @@ function routeEval(route, p, w, ins, pos, out, r) {
   let prev = 0;
   let late = 0;
   let dist = 0;
+  let off = 0;
   for (let k = 0, x = 0; k < len; k++) {
     let i;
     if (ins >= 0 && k === pos) i = ins;
     else i = route[x++];
+    if (p.lock && p.lock[i] != null && p.lock[i] !== r) off += LOCKED;
+    else if (p.home && p.home[i] != null && p.home[i] !== r) off += p.away || 0;
     t += p.time[prev][i];
     if (p.dist) dist += p.dist[prev][i];
     const o = p.open[i];
@@ -120,7 +128,7 @@ function routeEval(route, p, w, ins, pos, out, r) {
   const otAt = otAtOf(p, r);
   const paid = t - shiftStartOf(p);
   const ot = t > otAt ? Math.min(paid, t - otAt) : 0;
-  out.cost = paid + 0.5 * ot + (p.fuelPerMile || 0) * dist + w.late * late + w.pastEnd * pastEnd;
+  out.cost = paid + 0.5 * ot + (p.fuelPerMile || 0) * dist + w.late * late + w.pastEnd * pastEnd + off;
   out.finish = t;
   return out;
 }
@@ -386,4 +394,9 @@ export function insertStop(orders, p, stop, minPos = [], weights = {}) {
   const out = orders.map((r) => r.slice());
   out[bestR].splice(bestPos, 0, stop);
   return out;
+}
+
+// The search's own score for a set of routes (lower is better), to compare two plans fairly.
+export function costOf(orders, p, weights = {}) {
+  return new State(orders.map((r) => r.slice()), p, { ...DEFAULT_WEIGHTS, ...weights }).total();
 }

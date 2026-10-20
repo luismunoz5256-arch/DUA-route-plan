@@ -27,6 +27,10 @@ body:has(> .route-view) { margin: 0; background: #f4f6f3; }
 .route-view .name { font-weight: 700; font-size: 1.05rem; }
 .route-view .addr { color: var(--muted); font-size: 0.95rem; }
 .route-view .note { font-size: 0.9rem; margin-top: 4px; }
+.route-view .new { display: inline-block; background: #dbe8fb; color: #1f4f9c; font-size: 0.8rem; font-weight: 700; border-radius: 999px; padding: 1px 8px; }
+.route-view .load-note { background: #fff6dd; border: 1px solid #ecd08a; border-radius: 12px; padding: 10px 12px; font-size: 0.95rem; }
+.route-view .load-note.final { background: #e8f2ea; border-color: #9cc5a4; color: #234f2c; font-weight: 600; }
+.route-view .gone { background: #fbe1df; border: 1px solid #e8a9a4; color: #7a1a14; border-radius: 12px; padding: 10px 12px; }
 .route-view .prio { display: inline-block; background: #fde8c8; color: #8a4b00; font-size: 0.8rem; font-weight: 700; border-radius: 999px; padding: 1px 8px; }
 .route-view .btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .route-view .btns a, .route-view .btns button { flex: 1; min-width: 120px; text-align: center; font: inherit; font-weight: 600; padding: 10px; border-radius: 10px; border: 1px solid #c6cec8; background: #fff; color: #1d2420; text-decoration: none; cursor: pointer; }
