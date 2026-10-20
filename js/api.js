@@ -65,6 +65,12 @@ export async function setupAdmin(setupCode, username, password) {
   return r.user;
 }
 
+export async function recoverAdmin(setupCode, username, password) {
+  const r = await call('recoverAdmin', { setupCode, username, password });
+  setSession({ token: r.token, user: r.user });
+  return r.user;
+}
+
 export function updateUser(user) {
   const s = getSession();
   if (s) setSession({ ...s, user });

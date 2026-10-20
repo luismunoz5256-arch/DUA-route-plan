@@ -350,4 +350,6 @@ export const ES = {
   "{drivers} would cost {amount} less.": "Con {drivers} costaría {amount} menos.",
   "{drivers} gets everyone back on time.": "Con {drivers} todos regresan a tiempo.",
   "Show that plan": "Ver ese plan",
+  "Locked out of admin? Use the setup code": "¿Sin acceso de administrador? Use el código de configuración",
+  "Make admin and log in": "Hacer administrador y entrar",
 };

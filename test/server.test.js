@@ -227,3 +227,27 @@ test('Geotab: a week of trips without GPS trails for payroll', () => {
   const multi = g.calls.find((c) => c.method === 'ExecuteMultiCall');
   assert.deepEqual(multi.params.calls.map((c) => c.params.typeName), ['Trip', 'Trip']);
 });
+
+test('admin recovery with the setup code makes an existing user admin again', () => {
+  const { s, ana } = setupServer();
+  assert.match(s.call({ action: 'recoverAdmin', setupCode: 'wrong', username: 'ana', password: 'new-pass1' }).error, /Wrong setup code/);
+  const r = s.call({ action: 'recoverAdmin', setupCode: 'test-setup-code', username: 'ana', password: 'new-pass1' });
+  assert.equal(r.user.role, 'admin');
+  assert.ok(s.call({ action: 'listUsers', token: r.token }).users);
+  assert.equal(s.call({ action: 'login', username: 'ana', password: 'secret123' }).error, 'Wrong username or password.');
+  assert.ok(s.call({ action: 'login', username: 'ana', password: 'new-pass1' }).token);
+  assert.ok(ana); // the old session still belongs to ana, now an admin
+});
+
+test('admin recovery can create a brand-new admin', () => {
+  const { s } = setupServer();
+  const r = s.call({ action: 'recoverAdmin', setupCode: 'test-setup-code', username: 'dad', password: 'dad-pass1' });
+  assert.equal(r.user.role, 'admin');
+  assert.equal(s.call({ action: 'listUsers', token: r.token }).users.length, 5);
+});
+
+test('guessing the setup code is locked out after repeated tries', () => {
+  const { s } = setupServer();
+  for (let i = 0; i < 5; i++) s.call({ action: 'recoverAdmin', setupCode: 'guess' + i, username: 'x', password: 'xxxxxx1' });
+  assert.match(s.call({ action: 'recoverAdmin', setupCode: 'test-setup-code', username: 'x', password: 'xxxxxx1' }).error, /Too many/);
+});

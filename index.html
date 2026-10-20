@@ -29,15 +29,21 @@
             </label>
           </div>
           <div id="setup-box" hidden>
-            <p class="small" data-lang="en">First time: create the admin account. You need the <b>setup code</b> written in the Google Sheet script.</p>
-            <p class="small" data-lang="es">Primera vez: cree la cuenta de administrador. Necesita el <b>código de configuración</b> escrito en el script de la hoja de Google.</p>
+            <div id="setup-first">
+              <p class="small" data-lang="en">First time: create the admin account. You need the <b>setup code</b> written in the Google Sheet script.</p>
+              <p class="small" data-lang="es">Primera vez: cree la cuenta de administrador. Necesita el <b>código de configuración</b> escrito en el script de la hoja de Google.</p>
+            </div>
+            <div id="setup-recover" hidden>
+              <p class="small" data-lang="en"><b>Admin recovery:</b> enter the <b>setup code</b> from the Google Sheet script, then the username to make admin (yours, or a new one) and a new password for it.</p>
+              <p class="small" data-lang="es"><b>Recuperar administrador:</b> escriba el <b>código de configuración</b> del script de la hoja de Google, luego el usuario que será administrador (el suyo o uno nuevo) y una contraseña nueva.</p>
+            </div>
             <label>Setup code <input name="setupCode" type="password" autocomplete="off" /></label>
           </div>
           <label>Username <input name="username" autocomplete="username" autocapitalize="none" required /></label>
           <label>Password <input name="password" type="password" autocomplete="current-password" required /></label>
           <button class="primary big" type="submit" id="login-btn">Log in</button>
           <p id="login-msg" class="small"></p>
-          <p class="small"><a href="#" id="change-server">Change server address</a></p>
+          <p class="small"><a href="#" id="change-server">Change server address</a> · <a href="#" id="recover-admin">Locked out of admin? Use the setup code</a></p>
         </form>
       </div>
     </section>

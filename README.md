@@ -100,6 +100,8 @@ One-time setup (about 10 minutes):
 Good to know:
 - **"Anyone" access** in step 4 only means the website can reach the script. Every request still needs a valid login. After 5 wrong passwords, that username is locked for 15 minutes.
 - **Passwords** are stored scrambled (salted hashes), never in plain text.
+- **Only Admin accounts see Users, Settings and Trucks.** The top-right corner shows who is logged in and their role (for example "boss · Admin").
+- **Locked out of admin?** On the login page, click **Locked out of admin? Use the setup code**. Enter the `SETUP_CODE` from the script, a username (yours or a new one) and a new password. That account becomes an admin. Wrong codes lock this for 15 minutes after 5 tries.
 - **Logging out** wipes the data saved in that browser. Everything stays in the Google Sheet.
 - **Changing the script later:** update it in Apps Script, then **Deploy → Manage deployments → Edit → Version: New version → Deploy**. That keeps the same URL.
 - **Google key:** the admin enters it once in Settings. It's shared with admin and secretary logins so they can build routes, but never sent to drivers.

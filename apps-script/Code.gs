@@ -2,7 +2,8 @@
 //
 // Setup: paste this into Extensions → Apps Script of a new Google Sheet, change SETUP_CODE,
 // then Deploy → New deployment → Web app (Execute as: Me, Who has access: Anyone).
-// SETUP_CODE is only used once, to create the first admin account.
+// SETUP_CODE creates the first admin account, and later lets you get admin access back
+// ("Admin recovery" on the login page) if no admin can log in.
 //
 // Roles:
 //   admin      everything, including settings and user accounts
@@ -44,6 +45,8 @@ function handle(req) {
       return { needsSetup: loadUsers().length === 0 };
     case 'setup':
       return withLock(() => setup(req));
+    case 'recoverAdmin':
+      return withLock(() => recoverAdmin(req));
     case 'login':
       return withLock(() => login(req));
   }
@@ -96,30 +99,60 @@ function handle(req) {
 
 function setup(req) {
   if (loadUsers().length) throw new Error('Setup was already done. Log in instead.');
-  if (req.setupCode !== SETUP_CODE || SETUP_CODE === 'change-this-to-something-long') {
-    throw new Error('Wrong setup code (change SETUP_CODE in the script first).');
-  }
+  checkSetupCode(req.setupCode);
   const user = newUser({ username: req.username, role: 'admin', password: req.password });
   saveUsers([user]);
   return startSession(user);
 }
 
-function login(req) {
-  const username = clean(req.username);
-  const failKey = 'f_' + username;
-  const fails = JSON.parse(props().getProperty(failKey) || '{"n":0,"until":0}');
+// Makes the given username an admin with the given password (creating it if needed).
+// Needs the SETUP_CODE from this script, so only someone who can edit the script can do it.
+function recoverAdmin(req) {
+  checkSetupCode(req.setupCode);
+  checkPassword(req.password);
+  const users = loadUsers();
+  let user = users.find((u) => u.username === clean(req.username));
+  if (user) {
+    user.role = 'admin';
+    user.driverName = '';
+    user.salt = Utilities.getUuid();
+    user.hash = hash(req.password, user.salt);
+  } else {
+    user = newUser({ username: req.username, role: 'admin', password: req.password });
+    users.push(user);
+  }
+  saveUsers(users);
+  props().deleteProperty('f_' + user.username);
+  return startSession(user);
+}
+
+function checkSetupCode(code) {
+  limitTries('f_setupcode', () => code === SETUP_CODE && SETUP_CODE !== 'change-this-to-something-long', 'Wrong setup code (change SETUP_CODE in the script first).');
+}
+
+// Runs check(); after MAX_FAILS failures under `key`, refuses for LOCK_MINUTES.
+function limitTries(key, check, message) {
+  const fails = JSON.parse(props().getProperty(key) || '{"n":0,"until":0}');
   if (fails.until > Date.now()) throw new Error(`Too many tries. Wait ${LOCK_MINUTES} minutes and try again.`);
-  const user = loadUsers().find((u) => u.username === username);
-  if (!user || user.hash !== hash(String(req.password || ''), user.salt)) {
+  if (!check()) {
     fails.n += 1;
     if (fails.n >= MAX_FAILS) {
       fails.n = 0;
       fails.until = Date.now() + LOCK_MINUTES * 60000;
     }
-    props().setProperty(failKey, JSON.stringify(fails));
-    throw new Error('Wrong username or password.');
+    props().setProperty(key, JSON.stringify(fails));
+    throw new Error(message);
   }
-  props().deleteProperty(failKey);
+  props().deleteProperty(key);
+}
+
+function login(req) {
+  const username = clean(req.username);
+  let user;
+  limitTries('f_' + username, () => {
+    user = loadUsers().find((u) => u.username === username);
+    return user && user.hash === hash(String(req.password || ''), user.salt);
+  }, 'Wrong username or password.');
   cleanSessions();
   return startSession(user);
 }

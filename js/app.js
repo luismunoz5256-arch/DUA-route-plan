@@ -1717,7 +1717,15 @@ uform.addEventListener('submit', async (e) => {
 // ---------- Login ----------
 
 const lform = $('#login-form');
-let setupMode = false;
+let loginMode = 'login'; // 'login' | 'setup' (first admin) | 'recover' (admin recovery)
+
+function setLoginMode(mode) {
+  loginMode = mode;
+  $('#setup-box').hidden = mode === 'login';
+  $('#setup-first').hidden = mode !== 'setup';
+  $('#setup-recover').hidden = mode !== 'recover';
+  $('#login-btn').textContent = { login: t('Log in'), setup: t('Create admin account'), recover: t('Make admin and log in') }[mode];
+}
 
 function loginMessage(msg, bad = true) {
   $('#login-msg').textContent = msg;
@@ -1731,19 +1739,21 @@ async function showLogin(msg = '') {
   const url = api.getServerUrl();
   lform.elements.server.value = url;
   $('#server-box').hidden = !!url;
-  setupMode = false;
-  $('#setup-box').hidden = true;
-  $('#login-btn').textContent = t('Log in');
+  setLoginMode('login');
   if (!url) return;
   try {
-    setupMode = (await api.call('status')).needsSetup;
+    if ((await api.call('status')).needsSetup) setLoginMode('setup');
   } catch (err) {
     $('#server-box').hidden = false;
     loginMessage(err.message);
   }
-  $('#setup-box').hidden = !setupMode;
-  if (setupMode) $('#login-btn').textContent = t('Create admin account');
 }
+
+$('#recover-admin').addEventListener('click', (e) => {
+  e.preventDefault();
+  setLoginMode(loginMode === 'recover' ? 'login' : 'recover');
+  loginMessage('');
+});
 
 $('#change-server').addEventListener('click', (e) => {
   e.preventDefault();
@@ -1762,12 +1772,13 @@ lform.addEventListener('submit', async (e) => {
   if (el.server.value.trim() && el.server.value.trim() !== api.getServerUrl()) {
     api.setServerUrl(el.server.value);
     await showLogin();
-    if (setupMode) return;
+    if (loginMode === 'setup') return;
   }
   if (!api.getServerUrl()) return showLogin(t('Enter the server address first.'));
   $('#login-btn').disabled = true;
   try {
-    const user = setupMode ? await api.setupAdmin(el.setupCode.value, el.username.value, el.password.value) : await api.login(el.username.value, el.password.value);
+    const login = { login: api.login, setup: api.setupAdmin, recover: api.recoverAdmin }[loginMode];
+    const user = loginMode === 'login' ? await login(el.username.value, el.password.value) : await login(el.setupCode.value, el.username.value, el.password.value);
     lform.reset();
     store.setSyncState({ last: null, error: '' });
     await enterApp(user);
