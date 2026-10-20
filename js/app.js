@@ -322,6 +322,9 @@ function renderPlanControls() {
   $('#plan-balance').value = settings.balance;
 }
 
+// Column name shown beside a table cell when phones stack table rows into cards (see style.css).
+const label = (text) => ` data-label="${esc(t(text))}"`;
+
 // One row per driver: name, hours already this week, when overtime starts today.
 function renderDriverRows() {
   if (!day) return;
@@ -333,9 +336,9 @@ function renderDriverRows() {
     const typed = day.weekHours[i];
     const extra = i >= settings.driverCount ? ` <span class="muted small">${t('(only if one more driver)')}</span>` : '';
     return `<tr>
-      <td><input data-driver="${i}" value="${esc(driverName(i))}" />${extra}</td>
-      <td><input class="hours" type="number" step="0.25" min="0" data-hours="${i}" value="${typed != null && typed !== '' ? esc(typed) : fmtHours(before)}" /> h</td>
-      <td class="small">${fmtTime(overtimeStart({ ...rules, weekBeforeMin: before }))}</td>
+      <td${label('Driver')}><input data-driver="${i}" value="${esc(driverName(i))}" />${extra}</td>
+      <td${label('Hours this week')}><input class="hours" type="number" step="0.25" min="0" data-hours="${i}" value="${typed != null && typed !== '' ? esc(typed) : fmtHours(before)}" /> h</td>
+      <td class="small"${label('Overtime starts')}>${fmtTime(overtimeStart({ ...rules, weekBeforeMin: before }))}</td>
     </tr>`;
   }).join('');
 }
@@ -353,13 +356,13 @@ function renderStops() {
     .map((c) => {
       const s = day.selected[c.id];
       return `<tr data-id="${esc(c.id)}" class="${s ? 'selected' : ''}">
-        <td><input type="checkbox" data-f="on" ${s ? 'checked' : ''} aria-label="${esc(c.name)}" /></td>
+        <td class="pick"><input type="checkbox" data-f="on" ${s ? 'checked' : ''} aria-label="${esc(c.name)}" /></td>
         <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ` <span class="tag good">${t('regular today')}</span>` : ''}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</div></td>
-        <td class="small">${esc(daysText(c.days))}</td>
-        <td class="small">${num(c.unload, settings.defaultUnload)} min</td>
-        <td><input type="checkbox" data-f="priority" ${s?.priority ? 'checked' : ''} ${s ? '' : 'disabled'} aria-label="${t('Priority')}" /></td>
-        <td><input type="time" data-f="by" value="${esc(s?.by || settings.priorityBy)}" ${s?.priority ? '' : 'disabled'} /></td>
-        <td><input class="note" data-f="note" value="${esc(s?.note || '')}" ${s ? '' : 'disabled'} placeholder="${esc(c.notes || '')}" /></td>
+        <td class="small"${label('Usual days')}>${esc(daysText(c.days))}</td>
+        <td class="small"${label('Unload')}>${num(c.unload, settings.defaultUnload)} min</td>
+        <td class="prio"${label('Priority')}><input type="checkbox" data-f="priority" ${s?.priority ? 'checked' : ''} ${s ? '' : 'disabled'} aria-label="${t('Priority')}" /></td>
+        <td class="by"${label('Deliver by')}><input type="time" data-f="by" value="${esc(s?.by || settings.priorityBy)}" ${s?.priority ? '' : 'disabled'} /></td>
+        <td class="note-cell"${label('Note for today')}><input class="note" data-f="note" value="${esc(s?.note || '')}" ${s ? '' : 'disabled'} placeholder="${esc(c.notes || '')}" /></td>
       </tr>`;
     })
     .join('');
@@ -596,7 +599,7 @@ function renderResults() {
 
   const head = ['Drivers', 'Back at warehouse', 'Paid hours', 'Overtime', 'Labor', 'Fuel', 'Total', ''].map((h) => `<th>${h && t(h)}</th>`).join('');
   $('#compare-rows').innerHTML =
-    `<tr>${head}</tr>` +
+    `<tr class="head">${head}</tr>` +
     views
       .map(({ o, ev }) => {
         const flags = [];
@@ -607,14 +610,14 @@ function renderResults() {
         if (o.edited) flags.push(`<span class="tag">${t('Changed by hand')}</span>`);
         const finishes = ev.routes.filter((r) => r.order.length).map((r) => fmtTime(r.finish)).join(', ');
         return `<tr data-k="${o.k}" class="${o.k === view.k ? 'current' : ''}">
-          <td><b>${o.k}</b>${o.k === plan.requested ? ` <span class="muted small">${t('(requested)')}</span>` : ''}</td>
-          <td class="small">${finishes}</td>
-          <td>${fmtHours(ev.paidMinutes)} h</td>
-          <td>${ev.otMinutes >= 0.5 ? `${fmtHours(ev.otMinutes)} h` : '—'}</td>
-          <td>${fmtMoney(ev.labor)}</td>
-          <td>${fmtMoney(ev.fuel)}</td>
-          <td><b>${fmtMoney(ev.total)}</b></td>
-          <td>${flags.join(' ')}</td>
+          <td class="k"><b>${plural(o.k, '1 driver', '{n} drivers')}</b>${o.k === plan.requested ? ` <span class="muted small">${t('(requested)')}</span>` : ''}</td>
+          <td class="small"${label('Back at warehouse')}>${finishes}</td>
+          <td${label('Paid hours')}>${fmtHours(ev.paidMinutes)} h</td>
+          <td${label('Overtime')}>${ev.otMinutes >= 0.5 ? `${fmtHours(ev.otMinutes)} h` : '—'}</td>
+          <td${label('Labor')}>${fmtMoney(ev.labor)}</td>
+          <td${label('Fuel')}>${fmtMoney(ev.fuel)}</td>
+          <td class="total"${label('Total')}><b>${fmtMoney(ev.total)}</b></td>
+          <td class="flags">${flags.join(' ')}</td>
         </tr>`;
       })
       .join('');
@@ -766,10 +769,10 @@ function driverCard(r, i, k, done) {
       <li class="depot"><span class="num">W</span><span class="time">${fmtTime(r.finish)}</span><div><div class="who">${t('Back at {place}', { place: esc(plan.depot.name) })}</div></div></li>
     </ol>
     <div class="actions">
-      <a class="secondary" href="${esc(phoneLink(r, i))}" target="_blank" rel="noopener">${t('Driver phone page')}</a> ·
+      <a class="btn secondary" href="${esc(phoneLink(r, i))}" target="_blank" rel="noopener">${t('Driver phone page')}</a>
       <button class="secondary" data-copylink="${i}">${t('Copy phone link')}</button>
       <button class="secondary" data-copy="${i}">${t('Copy for text')}</button>
-      <span class="small">${links.map((l, n) => `<a href="${esc(l)}" target="_blank" rel="noopener">Google Maps${links.length > 1 ? ` ${n + 1}` : ''}</a>`).join(' · ')}</span>
+      ${links.map((l, n) => `<a class="btn secondary" href="${esc(l)}" target="_blank" rel="noopener">Google Maps${links.length > 1 ? ` ${n + 1}` : ''}</a>`).join('')}
     </div>
   </div>`;
 }
@@ -1050,11 +1053,11 @@ function renderClients() {
       (c) => `<tr data-id="${esc(c.id)}">
       <td class="name">${esc(c.name)}</td>
       <td class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</td>
-      <td class="small">${esc(daysText(c.days))}</td>
-      <td class="small">${num(c.unload, settings.defaultUnload)} min</td>
-      <td class="small">${c.open || c.close ? `${c.open ? fmtTime(toMin(c.open)) : '…'} – ${c.close ? fmtTime(toMin(c.close)) : '…'}` : ''}</td>
-      <td class="small">${esc(c.notes || '')}</td>
-      <td class="row small-gap"><button class="link" data-act="edit">${t('Edit')}</button><button class="link danger" data-act="delete">${t('Delete')}</button></td>
+      <td class="small"${label('Days')}>${esc(daysText(c.days))}</td>
+      <td class="small"${label('Unload')}>${num(c.unload, settings.defaultUnload)} min</td>
+      <td class="small"${label('Hours')}>${c.open || c.close ? `${c.open ? fmtTime(toMin(c.open)) : '…'} – ${c.close ? fmtTime(toMin(c.close)) : '…'}` : ''}</td>
+      <td class="small"${label('Notes')}>${esc(c.notes || '')}</td>
+      <td class="row small-gap actions"><button class="link" data-act="edit">${t('Edit')}</button><button class="link danger" data-act="delete">${t('Delete')}</button></td>
     </tr>`,
     )
     .join('');
@@ -1654,8 +1657,8 @@ async function renderUsers() {
   const me = api.getSession()?.user?.username;
   $('#user-rows').innerHTML = users
     .map((u) => `<tr data-user="${esc(u.username)}"><td><b>${esc(u.username)}</b>${u.username === me ? ` <span class="muted small">${t('(you)')}</span>` : ''}</td>
-      <td>${ROLE_LABEL[u.role]}</td><td>${esc(u.driverName || '')}</td>
-      <td class="row small-gap"><button class="link" data-uact="edit">${t('Edit / reset password')}</button>${u.username === me ? '' : `<button class="link danger" data-uact="delete">${t('Remove')}</button>`}</td></tr>`)
+      <td${label('Role')}>${ROLE_LABEL[u.role]}</td><td${label('Driver name')}>${esc(u.driverName || '')}</td>
+      <td class="row small-gap actions"><button class="link" data-uact="edit">${t('Edit / reset password')}</button>${u.username === me ? '' : `<button class="link danger" data-uact="delete">${t('Remove')}</button>`}</td></tr>`)
     .join('');
 }
 

@@ -98,7 +98,7 @@
       <section id="tab-users" class="panel" hidden>
         <div class="card">
           <h2>People who can log in</h2>
-          <div class="table-wrap"><table><thead><tr><th>Username</th><th>Role</th><th>Driver name</th><th></th></tr></thead><tbody id="user-rows"></tbody></table></div>
+          <div class="table-wrap"><table class="users stack"><thead><tr><th>Username</th><th>Role</th><th>Driver name</th><th></th></tr></thead><tbody id="user-rows"></tbody></table></div>
         </div>
         <form class="card grid-form" id="user-form">
           <h2 id="user-form-title">Add a person</h2>
@@ -122,7 +122,7 @@
       <!-- PLAN -->
       <section id="tab-plan" class="panel">
         <div class="card">
-          <div class="row wrap gap">
+          <div class="controls">
             <label>Delivery date <input type="date" id="plan-date" /></label>
             <label>Drivers
               <select id="plan-drivers"></select>
@@ -138,7 +138,7 @@
               </select>
             </label>
           </div>
-          <table class="drivers-table">
+          <table class="drivers-table stack">
             <thead><tr><th>Driver</th><th title="Paid hours already this week (from History). Change it if it's wrong.">Hours worked this week before today</th><th>Overtime starts</th></tr></thead>
             <tbody id="driver-rows"></tbody>
           </table>
@@ -154,7 +154,7 @@
             </div>
           </div>
           <div class="table-wrap">
-            <table class="stops">
+            <table class="stops stack">
               <thead>
                 <tr>
                   <th></th>
@@ -175,7 +175,7 @@
           </div>
         </div>
 
-        <div class="row gap">
+        <div class="row gap build-row">
           <button id="btn-optimize" class="primary big">Build routes</button>
           <span id="plan-status" class="muted"></span>
         </div>
@@ -184,7 +184,7 @@
           <div class="card">
             <h2>Compare driver counts</h2>
             <p class="muted small" id="cost-note"></p>
-            <div class="table-wrap"><table class="compare"><tbody id="compare-rows"></tbody></table></div>
+            <div class="table-wrap"><table class="compare stack"><tbody id="compare-rows"></tbody></table></div>
             <p id="best-hint" class="best-hint" hidden></p>
             <p id="data-note" class="muted small"></p>
           </div>
@@ -226,7 +226,7 @@
             </div>
           </div>
           <div class="table-wrap">
-            <table class="clients">
+            <table class="clients stack">
               <thead>
                 <tr><th>Name</th><th>Address</th><th>Days</th><th>Unload</th><th>Hours</th><th>Notes</th><th></th></tr>
               </thead>
