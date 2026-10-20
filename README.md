@@ -25,9 +25,34 @@ The website is free to host on GitHub Pages, and the Google Sheet is free too. *
 
 1. On GitHub, open the repository → **Settings** → **Pages**.
 2. Under **Build and deployment**, choose **Deploy from a branch**, pick the branch with this code (`main` after merging, or `claude/delivery-route-optimizer-7javjd`), folder **/ (root)**, then **Save**.
-3. After a minute the site is at `https://luismunoz5256-arch.github.io/DUA-route-plan/`. Bookmark it on the office computer.
+3. After a minute the site is live. Bookmark it, or add it to phones' home screens (below).
 
 On a free GitHub plan the repository has to be public for Pages to work. That's fine: only the program code is public. Your clients, routes and API key live in your own Google Sheet behind logins, and the site asks search engines not to list it.
+
+### A shorter link (free)
+
+The web address comes from the repository's name. To change it, go to **Settings → General → Repository name**, type the new name, and click **Rename**:
+
+| Repository name | Web address |
+|---|---|
+| `luismunoz5256-arch.github.io` | **`https://luismunoz5256-arch.github.io`** (the shortest possible) |
+| `rutas` | `https://luismunoz5256-arch.github.io/rutas/` |
+| `DUA-route-plan` (now) | `https://luismunoz5256-arch.github.io/DUA-route-plan/` |
+
+Good to know:
+- **No code changes needed.** Nothing in the app depends on the name.
+- **People stay logged in.** Every option above is on the same `luismunoz5256-arch.github.io` site, so logins and saved data on each computer and phone carry over.
+- **The old address stops working.** It isn't forwarded to the new one, so update bookmarks and home-screen icons, and send the new link to drivers. GitHub does forward the old name for code pushes.
+- **After renaming, check Settings → Pages** to confirm the branch and folder are still selected.
+- **Want your own address later (like `duaroutes.com`)?** Buy the name (about $10–15 a year), add it under **Settings → Pages → Custom domain**, and point the domain's DNS to GitHub as that page explains.
+
+### Add it to phones' home screens
+
+The site has a green truck icon and opens full-screen like an app.
+- **iPhone (Safari):** open the site, tap **Share** (square with an arrow), then **Add to Home Screen**.
+- **Android (Chrome):** open the site, tap **⋮**, then **Add to Home screen** or **Install app**.
+
+Drivers should add it from the **login page**, not from a route link they were texted, so it always opens their latest route. On iPhone the home-screen app keeps its own login, so log in once more after adding it.
 
 ## 2. Get a Google Maps key (free if you stay under Google's monthly free amounts)
 

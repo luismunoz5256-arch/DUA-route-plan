@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Full-bleed square so phones can round or circle-crop it; the truck stays inside the safe center. -->
+  <rect width="512" height="512" fill="#2f6b3b"/>
+  <g transform="translate(256 262) scale(1.1) translate(-256 -262)">
+  <rect x="88" y="356" width="336" height="10" rx="5" fill="#cfe8d4" opacity="0.55"/>
+  <!-- cargo box -->
+  <rect x="100" y="164" width="206" height="160" rx="16" fill="#ffffff"/>
+  <!-- leaf on the box -->
+  <path d="M203 186c-22 6-34 22-32 44 22-2 36-16 32-44z" fill="#6cbf6e"/>
+  <path d="M171 230c8-14 18-24 30-32" stroke="#2f6b3b" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <text x="203" y="296" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="900" font-size="58" letter-spacing="2" fill="#2f6b3b">DUA</text>
+  <!-- cab -->
+  <path d="M312 208h56c7 0 13 3 17 9l33 47c2 3 3 7 3 11v41c0 6-4 10-10 10H312z" fill="#ffffff"/>
+  <path d="M330 226h34c3 0 5 1 7 3l25 37h-66z" fill="#2f6b3b"/>
+  <!-- wheels -->
+  <circle cx="162" cy="330" r="31" fill="#1d2420" stroke="#ffffff" stroke-width="9"/>
+  <circle cx="162" cy="330" r="10" fill="#ffffff"/>
+  <circle cx="362" cy="330" r="31" fill="#1d2420" stroke="#ffffff" stroke-width="9"/>
+  <circle cx="362" cy="330" r="10" fill="#ffffff"/>
+  </g>
+</svg>
