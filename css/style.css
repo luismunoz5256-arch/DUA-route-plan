@@ -178,6 +178,9 @@ body[data-role='driver'] main { padding: 0; }
 .truck-card .tag { white-space: nowrap; }
 #truck-cards { grid-template-columns: repeat(auto-fill, minmax(min(100%, 500px), 1fr)); }
 
+.best-hint { margin: 0.6rem 0 0; padding: 0.5rem 0.7rem; border-radius: 6px; background: #eef6ef; color: var(--good); font-weight: 600; }
+.best-hint button.link { font-weight: 600; }
+
 /* Language switch */
 .account .lang-switch { color: #fff; }
 .login-card .lang-switch { color: var(--brand); }

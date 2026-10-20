@@ -347,4 +347,7 @@ export const ES = {
   "{n} stops": "{n} paradas",
   "{n} stops · {mi} mi": "{n} paradas · {mi} mi",
   "— no truck —": "— sin camión —",
+  "{drivers} would cost {amount} less.": "Con {drivers} costaría {amount} menos.",
+  "{drivers} gets everyone back on time.": "Con {drivers} todos regresan a tiempo.",
+  "Show that plan": "Ver ese plan",
 };

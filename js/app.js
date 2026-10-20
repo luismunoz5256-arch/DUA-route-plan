@@ -534,7 +534,8 @@ async function buildRoutes() {
         const orders = r.routes.map((x) => x.order);
         plan.options.push({ k: vehicles, orders, original: orders.map((o) => o.slice()) });
       }
-      plan.view = bestOf(evaluateAll(plan)).k;
+      // Show the number of drivers that was asked for; a cheaper count is offered, not forced.
+      plan.view = k;
       savePlan();
       renderResults();
       status(t('Done in {s} s.', { s: ((performance.now() - t0) / 1000).toFixed(1) }));
@@ -618,12 +619,25 @@ function renderResults() {
       })
       .join('');
 
+  const viewEv = views.find((x) => x.o === view).ev;
+  const bestEv = views.find((x) => x.o === best).ev;
+  const hint = $('#best-hint');
+  hint.hidden = best === view;
+  if (best !== view) {
+    const saves = viewEv.total - bestEv.total;
+    hint.innerHTML =
+      (saves > 0.005
+        ? t('{drivers} would cost {amount} less.', { drivers: plural(best.k, '1 driver', '{n} drivers'), amount: fmtMoney(saves) })
+        : t('{drivers} gets everyone back on time.', { drivers: plural(best.k, '1 driver', '{n} drivers') })) +
+      ` <button class="link" data-k="${best.k}">${t('Show that plan')}</button>`;
+  }
+
   const src = plan.source;
   $('#data-note').innerHTML = src.estimated
     ? `<span class="warn-text">⚠ ${t('{n} of {total} drive times are rough straight-line estimates. Times may be off.', { n: src.estimated, total: src.google + src.estimated })}</span>`
     : t('Drive times from Google with typical traffic around {time}.', { time: fmtTime(toMin(src.trafficTime)) });
 
-  const ev = views.find((x) => x.o === view).ev;
+  const ev = viewEv;
   $('#plan-title').textContent = `${fmtDateLong(plan.date)} · ${plural(view.k, '1 driver', '{n} drivers')} · ${fmtMoney(ev.total)}`;
   $('#btn-reset-edits').hidden = !view.edited;
   renderRouteMap(ev);
@@ -632,13 +646,16 @@ function renderResults() {
   renderAddStop();
 }
 
-$('#compare-rows').addEventListener('click', (e) => {
-  const tr = e.target.closest('tr[data-k]');
-  if (!tr) return;
-  plan.view = Number(tr.dataset.k);
+// Click a row of the comparison (or "Show that plan") to switch to that number of drivers.
+function viewDrivers(e) {
+  const el = e.target.closest('[data-k]');
+  if (!el) return;
+  plan.view = Number(el.dataset.k);
   savePlan();
   renderResults();
-});
+}
+$('#compare-rows').addEventListener('click', viewDrivers);
+$('#best-hint').addEventListener('click', viewDrivers);
 
 $('#btn-reset-edits').addEventListener('click', () => {
   const opt = viewOption();

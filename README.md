@@ -156,7 +156,7 @@ A stop counts as reached when the truck stops within 200 meters of the client's 
 1. **Plan routes** → pick the date. Clients who usually order that weekday are already checked.
 2. Check or uncheck stops to match today's orders. Tick **Priority** for urgent stops and set **Deliver by**. Add a note for today if needed.
 3. Choose the number of drivers. Check their names and **hours worked this week** (filled in from History; type over it if it's wrong). Click **Build routes**.
-4. In **Compare driver counts**, see labor (with overtime), fuel and total for one driver fewer, the number you asked for, and one more. The cheapest workable plan is marked **Best** and shown. Click another row to view it instead.
+4. In **Compare driver counts**, see labor (with overtime), fuel and total for one driver fewer, the number you asked for, and one more. You see the plan for the number of drivers you picked. The cheapest workable plan is marked **Best**; click its row (or **Show that plan**) to switch to it.
 5. Adjust if needed: ▲ ▼ reorders a stop, **Move to…** gives it to another driver.
 6. Send each driver their **phone link** (**Copy phone link** or **Copy for text**), or **Print route sheets**.
 7. A late order comes in? Use **Add a late order**.
