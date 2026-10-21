@@ -39,16 +39,27 @@ const depotName = () => settings.depotName || t('Warehouse');
 const depotPoint = () => (settings.depotLat == null ? null : { lat: Number(settings.depotLat), lng: Number(settings.depotLng) });
 const plural = (n, one, many) => t(n === 1 ? one : many, { n });
 
-// The driver each client usually gets, learned from routes sent before `date`: whoever took them
-// most in the last 30 days, if at least twice and at least half the time.
-function usualDrivers(date = planDate) {
+// Learning period: until settings.learnUntil, routes are planned freely (no usual drivers), and
+// usual drivers are learned only from routes sent since settings.learnFrom, when learning began.
+const isLearning = (date = planDate) => !!settings.learnUntil && date <= settings.learnUntil;
+
+// How often each driver took each client in routes sent from learnFrom up to (not including) `date`:
+// { clientId: { driverName: times } }. Routes are kept for 30 days.
+function driverCounts(date = planDate) {
   const counts = {};
   for (const [d, day] of Object.entries(store.getRoutes())) {
-    if (d >= date) continue;
+    if (d >= date || (settings.learnFrom && d < settings.learnFrom)) continue;
     for (const [name, route] of Object.entries(day.drivers || {})) {
       for (const s of route.stops || []) if (s.id) (counts[s.id] ||= {})[name] = (counts[s.id][name] || 0) + 1;
     }
   }
+  return counts;
+}
+
+// The driver each client usually gets, learned from routes sent before `date`: whoever took them
+// most, if at least twice and at least half the time.
+function usualDrivers(date = planDate) {
+  const counts = driverCounts(date);
   const out = new Map();
   for (const [id, c] of Object.entries(counts)) {
     const [name, n] = Object.entries(c).sort((a, b) => b[1] - a[1])[0];
@@ -59,7 +70,36 @@ function usualDrivers(date = planDate) {
 }
 
 // A client's usual driver: set by hand on the client, else learned from past routes.
-const homeOf = (c, learned) => c.homeDriver || learned.get(c.id) || '';
+// None while learning, so every stop goes wherever it's cheapest.
+const homeOf = (c, learned, date = planDate) => (isLearning(date) ? '' : c.homeDriver || learned.get(c.id) || '');
+
+// While learning, the optimizer's routes come out in any order, so the east side could be
+// "route 1" one day and "route 3" the next. Give each route to the driver who took most of
+// its stops on earlier days, so each area keeps the same driver and there is something to learn.
+// Kept only if it costs no more than $2 (drivers' overtime can start at different times).
+function sameAreaSameDriver(orders, k) {
+  const counts = driverCounts();
+  const score = orders.map((o) => Array.from({ length: k }, (_, j) => o.reduce((sum, i) => sum + (counts[plan.stops[i - 1].id]?.[driverName(j)] || 0), 0)));
+  let best = null;
+  let bestScore = -1;
+  const permute = (r, used, perm, total) => {
+    if (r === k) {
+      if (total > bestScore) [best, bestScore] = [perm.slice(), total];
+      return;
+    }
+    for (let j = 0; j < k; j++) {
+      if (used & (1 << j)) continue;
+      perm[r] = j;
+      permute(r + 1, used | (1 << j), perm, total + score[r][j]);
+    }
+  };
+  permute(0, 0, [], 0);
+  if (!bestScore) return orders;
+  const relabeled = Array.from({ length: k }, () => []);
+  best.forEach((j, r) => (relabeled[j] = orders[r]));
+  const before = evaluate(plan, { k, orders }).total;
+  return evaluate(plan, { k, orders: relabeled }).total <= before + 2 ? relabeled : orders;
+}
 
 function fmtDateLong(date) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
@@ -414,6 +454,8 @@ function renderStops() {
     const home = homeOf(c, learned);
     return home ? ` <span class="tag">${t('usually {name}', { name: esc(home) })}</span>` : '';
   };
+  $('#learn-note').hidden = !isLearning();
+  if (isLearning()) $('#learn-note').textContent = '🎓 ' + t('Learning usual drivers until {date}: routes are planned the cheapest way each day, and each area keeps the same driver from day to day.', { date: fmtDateLong(settings.learnUntil) });
   $('#live-note').hidden = !plan;
   if (plan) $('#live-note-text').textContent = t('Routes for this day are out. Checking a stop puts it on a truck right away (its usual driver when that makes sense); unchecking takes it off. Other stops never move.');
   $('#stop-rows').innerHTML = list
@@ -624,7 +666,8 @@ async function buildRoutes() {
           timeLimitMs: vehicles === k ? 2500 : 1500,
           weights: { balance: BALANCE[settings.balance] ?? 0.15 },
         });
-        const orders = r.routes.map((x) => x.order);
+        let orders = r.routes.map((x) => x.order);
+        if (isLearning() && !old) orders = sameAreaSameDriver(orders, vehicles);
         plan.options.push({ k: vehicles, orders, original: orders.map((o) => o.slice()) });
       }
       // Show the number of drivers that was asked for; a cheaper count is offered, not forced.
@@ -1400,6 +1443,7 @@ $('#history-days').addEventListener('click', (e) => {
 function renderClients() {
   const q = $('#client-search').value.trim().toLowerCase();
   const learned = usualDrivers(localDate());
+  const learning = isLearning(localDate());
   const list = clients.filter((c) => !q || c.name.toLowerCase().includes(q) || (c.address || '').toLowerCase().includes(q)).sort(byName);
   $('#client-count').textContent = `(${clients.length})`;
   $('#client-rows').innerHTML = list
@@ -1408,7 +1452,7 @@ function renderClients() {
       <td class="name">${esc(c.name)}</td>
       <td class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</td>
       <td class="small"${label('Days')}>${esc(daysText(c.days))}</td>
-      <td class="small"${label('Usual driver')}>${c.homeDriver ? esc(c.homeDriver) : learned.has(c.id) ? `${esc(learned.get(c.id))} <span class="muted">${t('(auto)')}</span>` : '—'}</td>
+      <td class="small"${label('Usual driver')}>${c.homeDriver ? esc(c.homeDriver) : learned.has(c.id) ? `${esc(learned.get(c.id))} <span class="muted">${learning ? t('(learning)') : t('(auto)')}</span>` : '—'}</td>
       <td class="small"${label('Unload')}>${num(c.unload, settings.defaultUnload)} min</td>
       <td class="small"${label('Hours')}>${c.open || c.close ? `${c.open ? fmtTime(toMin(c.open)) : '…'} – ${c.close ? fmtTime(toMin(c.close)) : '…'}` : ''}</td>
       <td class="small"${label('Notes')}>${esc(c.notes || '')}</td>
@@ -1445,7 +1489,7 @@ function openClient(c) {
   const v = c || { unload: settings.defaultUnload, days: [false, true, true, true, true, true, false] };
   const learned = c ? usualDrivers(localDate()).get(c.id) : '';
   cform.elements.homeDriver.innerHTML =
-    `<option value="">${learned ? t('Automatic (now {name})', { name: esc(learned) }) : t('Automatic (from past routes)')}</option>` +
+    `<option value="">${isLearning(localDate()) ? t('Automatic (learning until {date})', { date: esc(fmtDateLong(settings.learnUntil)) }) : learned ? t('Automatic (now {name})', { name: esc(learned) }) : t('Automatic (from past routes)')}</option>` +
     [...new Set([...settings.drivers.slice(0, MAX_DRIVERS), v.homeDriver].filter(Boolean))].map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
   for (const f of ['name', 'address', 'lat', 'lng', 'unload', 'open', 'close', 'notes', 'homeDriver', 'qbName']) cform.elements[f].value = v[f] ?? '';
   cform.querySelectorAll('[data-day]').forEach((cb) => (cb.checked = !!v.days?.[cb.dataset.day]));
@@ -1628,12 +1672,15 @@ const sform = $('#settings-form');
 const SETTING_FIELDS = [
   'depotName', 'depotAddress', 'depotLat', 'depotLng', 'shiftStart', 'start', 'latestReturn', 'payRate',
   'regularHoursPerDay', 'regularHoursPerWeek', 'fuelPerMile', 'defaultUnload', 'priorityBy', 'apiKey',
-  'trafficTime', 'monthlyElementLimit', 'monthlyGeocodeLimit', 'orderCutoff', 'keepWithDriver',
+  'trafficTime', 'monthlyElementLimit', 'monthlyGeocodeLimit', 'orderCutoff', 'keepWithDriver', 'learnUntil',
 ];
 const NUMERIC = new Set(['depotLat', 'depotLng', 'payRate', 'regularHoursPerDay', 'regularHoursPerWeek', 'fuelPerMile', 'defaultUnload', 'monthlyElementLimit', 'monthlyGeocodeLimit', 'keepWithDriver']);
 const DEPOT_LOC = ['depotAddress', 'depotLat', 'depotLng'];
 
 function renderSettings() {
+  $('#learn-line').textContent = isLearning(localDate())
+    ? t('Learning now (since {from}): routes are planned the cheapest way each day, and each area keeps the same driver from day to day. After {until}, each client stays with the driver they had most often.', { from: fmtDateLong(settings.learnFrom || localDate()), until: fmtDateLong(settings.learnUntil) })
+    : t('Usual drivers are learned from routes since {from}. Pick a date above to plan freely and learn again until then.', { from: settings.learnFrom ? fmtDateLong(settings.learnFrom) : '—' });
   renderGeotabSettings();
   renderQbSettings();
   for (const f of SETTING_FIELDS) sform.elements[f].value = settings[f] ?? '';
@@ -1672,6 +1719,8 @@ sform.addEventListener('submit', async (e) => {
     settings.apiKey = el.apiKey.value;
     await locateInto(sform, DEPOT_LOC, $('#settings-saved'));
   }
+  // A learning period set after the last one ended starts learning afresh from today.
+  if (el.learnUntil.value && el.learnUntil.value !== settings.learnUntil && !isLearning(localDate())) settings.learnFrom = localDate();
   for (const f of SETTING_FIELDS) {
     const v = el[f].value;
     settings[f] = NUMERIC.has(f) ? (v === '' ? (f.startsWith('depot') ? null : store.DEFAULT_SETTINGS[f]) : Number(v)) : v;

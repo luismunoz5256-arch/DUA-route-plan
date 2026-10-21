@@ -45,6 +45,10 @@ export const DEFAULT_SETTINGS = {
   priorityBy: '13:00',
   orderCutoff: '10:00', // orders after this time are late; then the driving order is set
   keepWithDriver: 10, // $: a client stays with their usual driver unless moving them saves more
+  // Learning period (dates as YYYY-MM-DD): until learnUntil, routes ignore usual drivers, and usual
+  // drivers are learned only from routes since learnFrom. Starts with two weeks from Oct 21, 2026.
+  learnFrom: '2026-10-21',
+  learnUntil: '2026-10-31',
   trafficTime: '12:30',
   monthlyElementLimit: 4000,
   monthlyGeocodeLimit: 2000,

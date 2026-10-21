@@ -1,6 +1,12 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "Learning usual drivers until {date}: routes are planned the cheapest way each day, and each area keeps the same driver from day to day.": "Aprendiendo los choferes de siempre hasta el {date}: las rutas se planean de la forma más barata cada día, y cada zona conserva el mismo chofer de un día a otro.",
+  "(learning)": "(aprendiendo)",
+  "Automatic (learning until {date})": "Automático (aprendiendo hasta el {date})",
+  "Learning now (since {from}): routes are planned the cheapest way each day, and each area keeps the same driver from day to day. After {until}, each client stays with the driver they had most often.": "Aprendiendo ahora (desde el {from}): las rutas se planean de la forma más barata cada día, y cada zona conserva el mismo chofer de un día a otro. Después del {until}, cada cliente se queda con el chofer que tuvo más veces.",
+  "Usual drivers are learned from routes since {from}. Pick a date above to plan freely and learn again until then.": "Los choferes de siempre se aprenden de las rutas desde el {from}. Elija una fecha arriba para planear libremente y volver a aprender hasta entonces.",
+  "Learn usual drivers until (no usual drivers before then)": "Aprender choferes de siempre hasta (sin choferes de siempre antes de esa fecha)",
   "QuickBooks: {n} stop(s) with an invoice for this day.": "QuickBooks: {n} parada(s) con factura para este día.",
   "The QuickBooks helper last checked in {time}. Is QuickBooks open on the office PC?": "El ayudante de QuickBooks se reportó por última vez el {time}. ¿Está QuickBooks abierto en la PC de la oficina?",
   "Checked {n} min ago.": "Revisado hace {n} min.",

@@ -122,6 +122,7 @@
       <!-- PLAN -->
       <section id="tab-plan" class="panel">
         <div class="card">
+          <p id="learn-note" class="learn-note" hidden></p>
           <div class="controls">
             <label>Delivery date <input type="date" id="plan-date" /></label>
             <label>Drivers
@@ -292,6 +293,8 @@
           <h2>Orders &amp; usual drivers</h2>
           <label>Orders close at <input name="orderCutoff" type="time" /></label>
           <label>Keep a client with their usual driver unless moving saves more than ($) <input name="keepWithDriver" type="number" step="1" min="0" /></label>
+          <label>Learn usual drivers until (no usual drivers before then) <input name="learnUntil" type="date" /></label>
+          <p class="span2 muted small" id="learn-line"></p>
           <p class="span2 muted small">After routes are built, new orders go straight onto a truck so drivers can load while orders come in. At closing time the app sets each driver's best driving order without moving stops between trucks.</p>
 
           <h2>Google Maps</h2>
@@ -375,6 +378,7 @@
           <h2>Loading while orders come in</h2>
           <ol>
             <li>Build the routes first thing in the morning with the regulars. Each client stays with their <b>usual driver</b> (set on the client, or learned from past routes) unless moving them saves more than the amount in Settings. Drivers can start loading right away.</li>
+            <li>Learning period (Settings → <b>Learn usual drivers until</b>): until that date nobody has a usual driver yet. Routes are planned the cheapest way each day and each area keeps the same driver, so the app learns good usual drivers to use afterwards.</li>
             <li>As orders come in, just check the stop. It goes onto a truck immediately and shows as <span class="tag new">New</span> on that driver's phone. Unchecking a stop takes it off, and the driver's phone says not to deliver it. Nobody else's stops move.</li>
             <li>When orders close (10:00 by default, in Settings), click <b>Set final driving order</b>. Every stop stays on its truck; each driver gets the best order and times. If moving a few stops would save real money, the app suggests it and you decide.</li>
             <li>With QuickBooks connected (Settings), saving an invoice checks its stop for you, and a voided or deleted invoice unchecks it. 🧾 marks stops that have an invoice; <b>Uncheck them</b> clears regulars that never ordered.</li>
@@ -426,6 +430,7 @@
           <h2>Cargar mientras llegan pedidos</h2>
           <ol>
             <li>Cree las rutas temprano en la mañana con los clientes de siempre. Cada cliente se queda con su <b>chofer de siempre</b> (puesto en el cliente, o aprendido de rutas anteriores) salvo que cambiarlo ahorre más de la cantidad en Ajustes. Los choferes pueden empezar a cargar de inmediato.</li>
+            <li>Periodo de aprendizaje (Ajustes → <b>Aprender choferes de siempre hasta</b>): hasta esa fecha nadie tiene chofer de siempre. Las rutas se planean de la forma más barata cada día y cada zona conserva el mismo chofer, así la aplicación aprende buenos choferes de siempre para después.</li>
             <li>Cuando llegue un pedido, solo marque la parada. Se asigna a un camión al instante y aparece como <span class="tag new">Nueva</span> en el teléfono de ese chofer. Al desmarcarla se quita, y el teléfono del chofer indica que no la entregue. Las paradas de los demás no se mueven.</li>
             <li>Cuando cierren los pedidos (10:00 por defecto, en Ajustes), haga clic en <b>Fijar orden final de manejo</b>. Cada parada se queda en su camión; cada chofer recibe el mejor orden y horarios. Si cambiar algunas paradas ahorra dinero de verdad, la aplicación lo sugiere y usted decide.</li>
             <li>Con QuickBooks conectado (Ajustes), al guardar una factura se marca su parada sola, y una factura anulada o borrada la desmarca. 🧾 indica las paradas con factura; <b>Desmarcarlas</b> quita a los clientes de siempre que no pidieron.</li>
