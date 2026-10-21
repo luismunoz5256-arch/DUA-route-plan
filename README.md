@@ -113,7 +113,7 @@ Good to know:
    `name, address, days, unload, earliest, latest, notes`
    - `days`: e.g. `Mon Wed Fri`, `Mon-Sat` or `daily` (clients who order now and then can leave it blank)
    - `unload`: minutes at the stop (default 10)
-   - `earliest` / `latest`: optional delivery hours, e.g. `13:00` or `1pm`
+   - `earliest` / `latest`: optional delivery hours, e.g. `13:00` or `1pm`. For different hours on certain days (e.g. only until 10:00 on Mondays), open the client and use **Different delivery times on some days**; a blank time there means the usual one
 3. **Clients → Find missing locations** puts every client on the map.
 4. Optional: **Settings → Pre-load drive times for all clients** looks up all drive times in one go. With 60 clients that's about 3,700 lookups, done once.
 5. Optional: **Settings → Download backup** for an extra copy (everything is already in the Google Sheet).

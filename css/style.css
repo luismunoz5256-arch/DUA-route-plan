@@ -90,7 +90,7 @@ button.big { padding: 0.75rem 1.8rem; font-size: 1.05rem; font-weight: 600; bord
 button:disabled { opacity: 0.6; cursor: wait; }
 .build-row { margin-bottom: 1rem; }
 
-.grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem 1rem; }
+.grid-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.9rem 1rem; }
 .grid-form h2 { grid-column: 1 / -1; margin-top: 0.6rem; }
 .grid-form .span2 { grid-column: 1 / -1; }
 fieldset.days { border: 1px solid var(--line); border-radius: 8px; }
@@ -138,6 +138,11 @@ table.week td.num, table.week th.num { text-align: right; }
 .dup-card h3 { margin: 0 0 0.3rem; font-size: 1rem; }
 .dup-card p { margin: 0 0 0.5rem; }
 .dup-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; padding: 0.5rem 0; border-top: 1px solid var(--warn-line); }
+.day-hours { border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem 0.75rem; }
+.day-hours summary { cursor: pointer; font-size: 0.9rem; color: var(--brand); font-weight: 500; }
+.day-hours p { margin: 0.4rem 0; }
+.day-hours-grid { display: grid; grid-template-columns: 3rem minmax(0, 9rem) minmax(0, 9rem); gap: 0.35rem 0.6rem; align-items: center; }
+.day-hours-grid .day { font-size: 0.9rem; }
 .merge-row { display: flex; align-items: flex-end; gap: 0.5rem; padding-top: 0.4rem; border-top: 1px dashed var(--line); }
 .qb-note { font-size: 0.85rem; margin: 0 0 0.7rem; }
 .tag.on-route { background: var(--route); color: #fff; }

@@ -1,6 +1,12 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "Earliest delivery": "Entrega desde",
+  "Latest delivery": "Entrega hasta",
+  "Different delivery times on some days": "Horarios de entrega distintos algunos días",
+  "Leave a time blank to use the usual one above.": "Deje una hora en blanco para usar la de siempre (arriba).",
+  "Earliest": "Desde",
+  "Latest": "Hasta",
   "{n} client(s) added from QuickBooks may be duplicates.": "{n} cliente(s) agregados desde QuickBooks podrían estar repetidos.",
   "Check them in Clients": "Revíselos en Clientes",
   "same address": "misma dirección",

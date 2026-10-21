@@ -467,7 +467,7 @@ function renderStops() {
       const s = day.selected[c.id];
       return `<tr data-id="${esc(c.id)}" class="${s ? 'selected' : ''}">
         <td class="pick"><input type="checkbox" data-f="on" ${s ? 'checked' : ''} aria-label="${esc(c.name)}" /></td>
-        <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ` <span class="tag good">${t('regular today')}</span>` : ''}${s?.qb?.length ? ` <span class="tag invoice">🧾 ${s.qb.map((r) => '#' + esc(r)).join(' ')}</span>` : ''}${driverTag(c)}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</div></td>
+        <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ` <span class="tag good">${t('regular today')}</span>` : ''}${c.dayHours?.[weekday] ? ` <span class="tag prio">⏰ ${esc(hoursText(hoursOn(c, weekday)))}</span>` : ''}${s?.qb?.length ? ` <span class="tag invoice">🧾 ${s.qb.map((r) => '#' + esc(r)).join(' ')}</span>` : ''}${driverTag(c)}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</div></td>
         <td class="small"${label('Usual days')}>${esc(daysText(c.days))}</td>
         <td class="small"${label('Unload')}>${num(c.unload, settings.defaultUnload)} min</td>
         <td class="prio"${label('Priority')}><input type="checkbox" data-f="priority" ${s?.priority ? 'checked' : ''} ${s ? '' : 'disabled'} aria-label="${t('Priority')}" /></td>
@@ -584,14 +584,24 @@ $('#btn-select-none').addEventListener('click', () => {
 });
 $('#btn-optimize').addEventListener('click', buildRoutes);
 
+// A client's delivery window on a weekday (0 = Sunday): that day's own times where set,
+// else the usual ones. { open, close } as "HH:MM" or ''.
+function hoursOn(c, weekday) {
+  const d = c.dayHours?.[weekday] || {};
+  return { open: d.open || c.open || '', close: d.close || c.close || '' };
+}
+
+const hoursText = ({ open, close }) => (open || close ? `${open ? fmtTime(toMin(open)) : '…'} – ${close ? fmtTime(toMin(close)) : '…'}` : '');
+
 function stopFromClient(c, sel, home = '') {
+  const hours = hoursOn(c, weekdayOf(planDate));
   const prio = sel.priority ? toMin(sel.by || settings.priorityBy) : null;
-  const close = toMin(c.close);
+  const close = toMin(hours.close);
   return {
     id: c.id, name: c.name, address: c.address, lat: Number(c.lat), lng: Number(c.lng), home,
     unload: num(c.unload, settings.defaultUnload), notes: c.notes || '', today: sel.note || '',
     priority: !!sel.priority, by: sel.priority ? sel.by || settings.priorityBy : '',
-    open: toMin(c.open), due: prio == null ? close : close == null ? prio : Math.min(prio, close),
+    open: toMin(hours.open), due: prio == null ? close : close == null ? prio : Math.min(prio, close),
   };
 }
 
@@ -1461,7 +1471,7 @@ function renderClients() {
       <td class="small"${label('Days')}>${esc(daysText(c.days))}</td>
       <td class="small"${label('Usual driver')}>${c.homeDriver ? esc(c.homeDriver) : learned.has(c.id) ? `${esc(learned.get(c.id))} <span class="muted">${learning ? t('(learning)') : t('(auto)')}</span>` : '—'}</td>
       <td class="small"${label('Unload')}>${num(c.unload, settings.defaultUnload)} min</td>
-      <td class="small"${label('Hours')}>${c.open || c.close ? `${c.open ? fmtTime(toMin(c.open)) : '…'} – ${c.close ? fmtTime(toMin(c.close)) : '…'}` : ''}</td>
+      <td class="small"${label('Hours')}>${hoursText(c)}${Object.keys(c.dayHours || {}).sort().map((w) => `<div class="muted">${DAYS[w]} ${hoursText(hoursOn(c, w))}</div>`).join('')}</td>
       <td class="small"${label('Notes')}>${esc(c.notes || '')}</td>
       <td class="row small-gap actions"><button class="link" data-act="edit">${t('Edit')}</button><button class="link danger" data-act="delete">${t('Delete')}</button></td>
     </tr>`,
@@ -1615,6 +1625,12 @@ const cform = $('#client-form');
 let editing = null;
 
 $('#client-days').innerHTML = DAYS.map((d, i) => `<label><input type="checkbox" data-day="${i}" /> ${d}</label>`).join('');
+// Monday first, Sunday last
+$('#day-hours-rows').innerHTML = `<span></span><span class="muted small">${t('Earliest')}</span><span class="muted small">${t('Latest')}</span>` + [1, 2, 3, 4, 5, 6, 0]
+  .map((i) => `<span class="day">${DAYS[i]}</span>
+    <input type="time" data-hours-day="${i}" data-side="open" aria-label="${esc(t('Earliest delivery'))} ${DAYS[i]}" />
+    <input type="time" data-hours-day="${i}" data-side="close" aria-label="${esc(t('Latest delivery'))} ${DAYS[i]}" />`)
+  .join('');
 
 function openClient(c) {
   editing = c || null;
@@ -1627,6 +1643,8 @@ function openClient(c) {
     [...new Set([...settings.drivers.slice(0, MAX_DRIVERS), v.homeDriver].filter(Boolean))].map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
   for (const f of ['name', 'address', 'lat', 'lng', 'unload', 'open', 'close', 'notes', 'homeDriver', 'qbName']) cform.elements[f].value = v[f] ?? '';
   cform.querySelectorAll('[data-day]').forEach((cb) => (cb.checked = !!v.days?.[cb.dataset.day]));
+  cform.querySelectorAll('[data-hours-day]').forEach((input) => (input.value = v.dayHours?.[input.dataset.hoursDay]?.[input.dataset.side] || ''));
+  $('#day-hours').open = Object.keys(v.dayHours || {}).length > 0;
   $('#client-locate-msg').textContent = '';
   $('#merge-row').hidden = !c;
   if (c) $('#merge-into').innerHTML = `<option value="">${t('Choose the client to keep…')}</option>` + clients.filter((x) => x !== c).sort(byName).map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
@@ -1687,7 +1705,11 @@ cform.addEventListener('submit', async (e) => {
     homeDriver: el.homeDriver.value,
     qbName: el.qbName.value.trim(),
     days: [...cform.querySelectorAll('[data-day]')].map((cb) => cb.checked),
+    dayHours: {},
   };
+  for (const input of cform.querySelectorAll('[data-hours-day]')) {
+    if (input.value) (data.dayHours[input.dataset.hoursDay] ||= {})[input.dataset.side] = input.value;
+  }
   // A changed QuickBooks name is linked again by name the next time invoices come in.
   if (editing && (editing.qbName || '') !== data.qbName) data.qbId = '';
   if (editing) Object.assign(editing, data);
