@@ -1604,7 +1604,7 @@ function renderDriverView() {
     return;
   }
   if (!driverDate) {
-    el.innerHTML = `<p class="card">${t("No route for you yet, {name}. The office will send it after building today's routes — this page checks every couple of minutes.", { name: esc(me.driverName) })}</p>`;
+    el.innerHTML = `<p class="card">${t("No route for you yet, {name}. The office will send it after building today's routes — this page checks every minute.", { name: esc(me.driverName) })}</p>`;
     return;
   }
   const done = store.getDone()[driverDate]?.[me.driverName] || {};

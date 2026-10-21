@@ -202,7 +202,7 @@ export const ES = {
   "No live position": "Sin posición en vivo",
   "No planned route for this driver on this day.": "No hay ruta planeada para este chofer en este día.",
   "No route for you on that day.": "No tiene ruta ese día.",
-  "No route for you yet, {name}. The office will send it after building today's routes — this page checks every couple of minutes.": "Todavía no tiene ruta, {name}. La oficina la enviará después de crear las rutas de hoy; esta página revisa cada par de minutos.",
+  "No route for you yet, {name}. The office will send it after building today's routes — this page checks every minute.": "Todavía no tiene ruta, {name}. La oficina la enviará después de crear las rutas de hoy; esta página revisa cada minuto.",
   "No signal": "Sin señal",
   "No stops for this driver.": "No hay paradas para este chofer.",
   "No truck returns to the warehouse found for this week.": "No se encontraron regresos de camiones a la bodega esta semana.",

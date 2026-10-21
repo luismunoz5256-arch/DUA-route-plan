@@ -82,7 +82,15 @@ export function initSync(h) {
     started = true;
     window.addEventListener('dua-change', schedule);
     window.addEventListener('focus', () => syncNow());
-    setInterval(() => syncNow(), 2 * 60 * 1000);
+    // Phones often skip 'focus' when the app is reopened, so also check when the page shows again.
+    document.addEventListener('visibilitychange', () => document.hidden || syncNow());
+    // Drivers check every minute so new or removed stops show up quickly; office computers every 2 minutes.
+    // Nothing is fetched while the page is in the background.
+    let tick = 0;
+    setInterval(() => {
+      tick++;
+      if (!document.hidden && (role() === 'driver' || tick % 2 === 0)) syncNow();
+    }, 60 * 1000);
   }
   return syncNow();
 }
