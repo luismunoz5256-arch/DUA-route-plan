@@ -47,10 +47,14 @@ const isLearning = (date = planDate) => !!settings.learnUntil && date <= setting
 // { clientId: { driverName: times } }. Routes are kept for 30 days.
 function driverCounts(date = planDate) {
   const counts = {};
+  const merged = new Map(clients.flatMap((c) => (c.formerIds || []).map((old) => [old, c.id]))); // see mergeClient
   for (const [d, day] of Object.entries(store.getRoutes())) {
     if (d >= date || (settings.learnFrom && d < settings.learnFrom)) continue;
     for (const [name, route] of Object.entries(day.drivers || {})) {
-      for (const s of route.stops || []) if (s.id) (counts[s.id] ||= {})[name] = (counts[s.id][name] || 0) + 1;
+      for (const s of route.stops || []) {
+        const id = merged.get(s.id) || s.id;
+        if (id) (counts[id] ||= {})[name] = (counts[id][name] || 0) + 1;
+      }
     }
   }
   return counts;
@@ -1207,6 +1211,8 @@ function renderQbNote() {
   parts.push(ago > QB_STALE_MIN && planDate >= localDate()
     ? `<span class="warn-text">⚠ ${t('The QuickBooks helper last checked in {time}. Is QuickBooks open on the office PC?', { time: new Date(qb.lastSeen).toLocaleString(locale, { weekday: 'short', hour: 'numeric', minute: '2-digit' }) })}</span>`
     : `<span class="muted">${t('Checked {n} min ago.', { n: ago })}</span>`);
+  const dups = duplicateSuggestions().length;
+  if (dups) parts.push(`<br><span class="warn-text">⚠ ${t('{n} client(s) added from QuickBooks may be duplicates.', { n: dups })}</span> <a href="#" data-goto="clients">${t('Check them in Clients')}</a>`);
   if (missing.length) {
     parts.push(`<br>${t('Checked but no invoice yet: {names}.', { names: missing.map(esc).join(', ') })} <button class="link" id="btn-uncheck-uninvoiced">${t('Uncheck them')}</button>`);
   }
@@ -1444,6 +1450,7 @@ function renderClients() {
   const q = $('#client-search').value.trim().toLowerCase();
   const learned = usualDrivers(localDate());
   const learning = isLearning(localDate());
+  renderDuplicates();
   const list = clients.filter((c) => !q || c.name.toLowerCase().includes(q) || (c.address || '').toLowerCase().includes(q)).sort(byName);
   $('#client-count').textContent = `(${clients.length})`;
   $('#client-rows').innerHTML = list
@@ -1476,6 +1483,133 @@ $('#client-rows').addEventListener('click', (e) => {
   }
 });
 
+// ---------- Duplicate clients (QuickBooks names that didn't match) ----------
+
+const STREET_WORDS = { street: 'st', avenue: 'ave', av: 'ave', boulevard: 'blvd', drive: 'dr', road: 'rd', lane: 'ln', north: 'n', south: 's', east: 'e', west: 'w', suite: 'ste' };
+const NAME_FILLER = new Set(['the', 'inc', 'llc', 'co', 'corp', 'company', 'and', 'restaurant', 'cafe', 'bar', 'grill', 'de', 'el', 'la', 'los', 'las']);
+
+// The street part of an address, spelled one way ("1037 N Mesa St").
+const streetKey = (address) => norm(String(address || '').split(',')[0]).split(' ').map((w) => STREET_WORDS[w] || w).join(' ');
+const nameWords = (name) => new Set(norm(name).split(' ').filter((w) => w && !NAME_FILLER.has(w)));
+
+function kmApart(a, b) {
+  const rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLng = (b.lng - a.lng) * rad * Math.cos(((a.lat + b.lat) / 2) * rad);
+  return 6371 * Math.hypot(dLat, dLng);
+}
+
+// Why two clients look like the same restaurant ({ score, text }), or null.
+function sameClientReason(a, b) {
+  const why = [];
+  let score = 0;
+  if (streetKey(a.address) && streetKey(a.address) === streetKey(b.address)) (score += 3), why.push(t('same address'));
+  else if (hasLoc(a) && hasLoc(b) && kmApart({ lat: +a.lat, lng: +a.lng }, { lat: +b.lat, lng: +b.lng }) < 0.12) (score += 2), why.push(t('same spot on the map'));
+  const wa = nameWords(a.name);
+  const wb = nameWords(b.name);
+  const shared = [...wa].filter((w) => wb.has(w)).length;
+  if (shared && shared / Math.min(wa.size, wb.size) >= 0.5) (score += 1), why.push(t('similar name'));
+  return score ? { score, text: why.join(', ') } : null;
+}
+
+// Each client QuickBooks added, paired with the existing client it most looks like.
+function duplicateSuggestions() {
+  const mine = clients.filter((c) => !c.qbId);
+  const out = [];
+  for (const q of clients.filter((c) => c.id.startsWith('qb-'))) {
+    let best = null;
+    for (const m of mine) {
+      if ((q.notDup || []).includes(m.id)) continue;
+      const why = sameClientReason(q, m);
+      if (why && (!best || why.score > best.why.score)) best = { m, why };
+    }
+    if (best) out.push({ q, m: best.m, reason: best.why.text });
+  }
+  return out;
+}
+
+function renderDuplicates() {
+  const list = duplicateSuggestions();
+  $('#dup-card').hidden = !list.length;
+  $('#dup-rows').innerHTML = list
+    .map(({ q, m, reason }) => `<div class="dup-row" data-q="${esc(q.id)}" data-m="${esc(m.id)}">
+      <div><b>${esc(q.name)}</b> <span class="tag invoice">QuickBooks</span> → <b>${esc(m.name)}</b>
+        <div class="muted small">${esc(reason)} · ${esc(q.address || '')}</div></div>
+      <div class="row small-gap"><button class="primary" data-dup="merge">${t('Merge')}</button><button class="secondary" data-dup="no">${t('Not the same')}</button></div>
+    </div>`)
+    .join('');
+}
+
+$('#dup-rows').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-dup]');
+  if (!b) return;
+  const row = b.closest('.dup-row');
+  const q = clients.find((c) => c.id === row.dataset.q);
+  if (b.dataset.dup === 'merge') mergeClient(row.dataset.q, row.dataset.m);
+  else if (q) {
+    q.notDup = [...(q.notDup || []), row.dataset.m];
+    saveClients();
+    renderClients();
+  }
+});
+
+// Moves the stop picked for `dupId` on one day over to `keepId`. True if anything changed.
+function mergeSelection(d, dupId, keepId) {
+  d.qbSkip = (d.qbSkip || []).map((x) => (x === dupId ? keepId : x));
+  const a = d.selected[dupId];
+  if (!a) return false;
+  const b = d.selected[keepId];
+  const qb = [...new Set([...(b?.qb || []), ...(a.qb || [])])];
+  d.selected[keepId] = { ...(b || a), ...(qb.length ? { qb } : {}) };
+  if (b) delete d.selected[keepId].fromQb; // was already checked: an invoice going away won't uncheck it
+  delete d.selected[dupId];
+  return true;
+}
+
+// Puts `keep` in place of stop `dupId` in a plan (or drops it if `keep` is already there).
+// Drivers' "first told" lists are renamed too, so their phones don't show it as new or taken off.
+function mergeInPlan(p, dupId, keep) {
+  const idx = p.stops.findIndex((s) => s.id === dupId) + 1;
+  if (!idx) return false;
+  if (p.stops.some((s) => s.id === keep.id)) dropStop(p, idx);
+  else Object.assign(p.stops[idx - 1], { id: keep.id, name: keep.name, address: keep.address || p.stops[idx - 1].address, notes: keep.notes || '' });
+  for (const [name, list] of Object.entries(p.sent || {})) {
+    const seen = new Set();
+    p.sent[name] = list
+      .map((s) => (s.id === dupId ? { id: keep.id, n: keep.name } : s))
+      .filter((s) => !seen.has(s.id) && seen.add(s.id));
+  }
+  return true;
+}
+
+// The same restaurant is in the list twice: keep one, remove the other, and move the QuickBooks
+// link, picked stops and route stops of the removed one over. Future invoices go to the kept one.
+function mergeClient(dupId, keepId) {
+  const dup = clients.find((c) => c.id === dupId);
+  const keep = clients.find((c) => c.id === keepId);
+  if (!dup || !keep || dup === keep) return;
+  if (!confirm(t('Merge "{dup}" into "{keep}"? "{dup}" is removed; its QuickBooks link, orders and route stops move to "{keep}".', { dup: dup.name, keep: keep.name }))) return;
+  if (dup.qbId) Object.assign(keep, { qbId: dup.qbId, qbName: dup.qbName || keep.qbName || '' });
+  if (!hasLoc(keep) && hasLoc(dup)) Object.assign(keep, { lat: dup.lat, lng: dup.lng, address: keep.address || dup.address });
+  keep.formerIds = [...new Set([...(keep.formerIds || []), dupId, ...(dup.formerIds || [])])];
+  keep.active = true;
+  clients = clients.filter((c) => c !== dup);
+  saveClients();
+  for (const [date, saved] of Object.entries(store.getDays())) {
+    if (date === planDate) continue;
+    if (mergeSelection(saved, dupId, keepId)) store.saveDay(date, saved);
+  }
+  if (day && mergeSelection(day, dupId, keepId)) saveDay();
+  for (const saved of Object.values(store.getPlans())) {
+    const p = saved.date === plan?.date ? plan : saved;
+    if (!mergeInPlan(p, dupId, keep)) continue;
+    if (p === plan) savePlan();
+    else store.savePlan(p);
+  }
+  renderClients();
+  renderResults();
+}
+
 const dialog = $('#client-dialog');
 const cform = $('#client-form');
 let editing = null;
@@ -1494,6 +1628,8 @@ function openClient(c) {
   for (const f of ['name', 'address', 'lat', 'lng', 'unload', 'open', 'close', 'notes', 'homeDriver', 'qbName']) cform.elements[f].value = v[f] ?? '';
   cform.querySelectorAll('[data-day]').forEach((cb) => (cb.checked = !!v.days?.[cb.dataset.day]));
   $('#client-locate-msg').textContent = '';
+  $('#merge-row').hidden = !c;
+  if (c) $('#merge-into').innerHTML = `<option value="">${t('Choose the client to keep…')}</option>` + clients.filter((x) => x !== c).sort(byName).map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
   dialog.showModal();
 }
 
@@ -1525,6 +1661,13 @@ function clearLocationOnChange(form, [addressField, latField, lngField]) {
 const CLIENT_LOC = ['address', 'lat', 'lng'];
 $('#btn-add-client').addEventListener('click', () => openClient(null));
 $('#btn-cancel-client').addEventListener('click', () => dialog.close());
+$('#btn-merge').addEventListener('click', () => {
+  const keepId = $('#merge-into').value;
+  if (!editing || !keepId) return alert(t('Choose the client to keep.'));
+  const id = editing.id;
+  mergeClient(id, keepId);
+  if (!clients.some((c) => c.id === id)) dialog.close();
+});
 $('#btn-locate-client').addEventListener('click', () => locateInto(cform, CLIENT_LOC, $('#client-locate-msg')));
 clearLocationOnChange(cform, CLIENT_LOC);
 

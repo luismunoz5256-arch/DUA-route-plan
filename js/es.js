@@ -1,6 +1,19 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "{n} client(s) added from QuickBooks may be duplicates.": "{n} cliente(s) agregados desde QuickBooks podrían estar repetidos.",
+  "Check them in Clients": "Revíselos en Clientes",
+  "same address": "misma dirección",
+  "same spot on the map": "mismo lugar en el mapa",
+  "similar name": "nombre parecido",
+  "Merge": "Unir",
+  "Not the same": "No es el mismo",
+  "Merge \"{dup}\" into \"{keep}\"? \"{dup}\" is removed; its QuickBooks link, orders and route stops move to \"{keep}\".": "¿Unir \"{dup}\" con \"{keep}\"? Se quita \"{dup}\"; su enlace con QuickBooks, pedidos y paradas en las rutas pasan a \"{keep}\".",
+  "Choose the client to keep…": "Elija el cliente que se queda…",
+  "Choose the client to keep.": "Elija el cliente que se queda.",
+  "Possible duplicates": "Posibles repetidos",
+  "QuickBooks added these because the names don't match a client you already had. Merge moves the QuickBooks link, orders and route stops onto your client and removes the copy, so future invoices go to your client.": "QuickBooks los agregó porque los nombres no coinciden con un cliente que ya tenía. Unir pasa el enlace con QuickBooks, los pedidos y las paradas a su cliente y quita la copia, así las facturas futuras van a su cliente.",
+  "Same restaurant as another client? Merge this one into:": "¿Es el mismo restaurante que otro cliente? Unir este con:",
   "Learning usual drivers until {date}: routes are planned the cheapest way each day, and each area keeps the same driver from day to day.": "Aprendiendo los choferes de siempre hasta el {date}: las rutas se planean de la forma más barata cada día, y cada zona conserva el mismo chofer de un día a otro.",
   "(learning)": "(aprendiendo)",
   "Automatic (learning until {date})": "Automático (aprendiendo hasta el {date})",

@@ -228,6 +228,11 @@
               <button id="btn-export-csv" class="secondary">Export CSV</button>
             </div>
           </div>
+          <div id="dup-card" class="dup-card" hidden>
+            <h3>Possible duplicates</h3>
+            <p class="muted small">QuickBooks added these because the names don't match a client you already had. Merge moves the QuickBooks link, orders and route stops onto your client and removes the copy, so future invoices go to your client.</p>
+            <div id="dup-rows"></div>
+          </div>
           <div class="table-wrap">
             <table class="clients stack">
               <thead>
@@ -489,6 +494,10 @@
         <label>Unload time (min) <input name="unload" type="number" min="0" /></label>
         <label>Usual driver <select name="homeDriver"></select></label>
         <label class="span2">QuickBooks customer name (links invoices to this client) <input name="qbName" autocomplete="off" /></label>
+        <div class="span2 merge-row" id="merge-row" hidden>
+          <label class="grow">Same restaurant as another client? Merge this one into: <select id="merge-into"></select></label>
+          <button type="button" id="btn-merge" class="secondary">Merge</button>
+        </div>
         <label>Earliest delivery (optional) <input name="open" type="time" /></label>
         <label>Latest delivery (optional) <input name="close" type="time" /></label>
         <label class="span2">Notes for driver <input name="notes" placeholder="e.g. back door, ask for Maria" /></label>

@@ -133,6 +133,12 @@ table.week td.num, table.week th.num { text-align: right; }
 .live-note p { margin: 0; }
 .live-note #live-msg:not(:empty) { margin-top: 0.35rem; font-weight: 500; }
 .tag.invoice { background: #efe7fb; color: #5b2f9c; }
+.learn-note { margin: 0 0 0.8rem; padding: 0.5rem 0.75rem; border-radius: 8px; background: #f3effa; color: #4a2f7a; font-size: 0.88rem; }
+.dup-card { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 8px; padding: 0.7rem 0.9rem; margin-bottom: 0.8rem; }
+.dup-card h3 { margin: 0 0 0.3rem; font-size: 1rem; }
+.dup-card p { margin: 0 0 0.5rem; }
+.dup-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; padding: 0.5rem 0; border-top: 1px solid var(--warn-line); }
+.merge-row { display: flex; align-items: flex-end; gap: 0.5rem; padding-top: 0.4rem; border-top: 1px dashed var(--line); }
 .qb-note { font-size: 0.85rem; margin: 0 0 0.7rem; }
 .tag.on-route { background: var(--route); color: #fff; }
 #final-card h2 { margin: 0; }
