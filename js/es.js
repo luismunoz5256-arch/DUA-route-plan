@@ -1,6 +1,8 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "A new version of the app is ready.": "Hay una nueva versión de la aplicación.",
+  "Reload": "Recargar",
   "Earliest delivery": "Entrega desde",
   "Latest delivery": "Entrega hasta",
   "Different delivery times on some days": "Horarios de entrega distintos algunos días",

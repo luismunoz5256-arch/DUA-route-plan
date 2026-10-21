@@ -226,6 +226,7 @@ Driver phones check for changes every minute while the app is open (and right aw
 - `js/api.js`, `js/sync.js` and `js/merge.js`: login calls and keeping the browser in step with the Sheet. Records merge by last edit, and deletes carry over.
 - `js/matrix.js` and `js/google.js`: Google Routes API `computeRouteMatrix` (`TRAFFIC_AWARE`) and Geocoding API, called from the browser and cached in `localStorage`.
 - `js/store.js`: everything saved in `localStorage` under `dua.*` keys.
+- `tools/stamp.mjs`: gives every script and stylesheet a version tag (hash of its contents) in `index.html` and `driver.html`, through an import map for the modules. Browsers then load a file again exactly when it changed, so an update never mixes old and new files. **Run `npm run stamp` after changing anything in `js/` or `css/`**; the tests fail if you forget. A planner left open shows "A new version of the app is ready" with a **Reload** button after an update.
 - `quickbooks/qb-sync.ps1`: the QuickBooks Desktop helper (Windows PowerShell 5.1). It asks QuickBooks for invoices with qbXML (`InvoiceQueryRq` by date, through the `QBXMLRP2.RequestProcessor` COM object) and posts them to the server's `qbPush` action. The server replaces each sent day as a whole, so deleted invoices drop off.
 
 Run locally:

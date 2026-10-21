@@ -254,6 +254,28 @@ async function ensureDriveTimes(points, status) {
   return cache;
 }
 
+// ---------- App updates ----------
+
+// A file's address with its version tag from the page's import map (see tools/stamp.mjs).
+function versioned(path) {
+  const map = JSON.parse(document.querySelector('script[type="importmap"]')?.textContent || '{}').imports || {};
+  return new URL(map[path] || path, location.href);
+}
+
+// The office keeps the planner open all day: offer a reload when a newer version is online.
+async function checkForUpdate() {
+  const mine = document.querySelector('meta[name="build"]')?.content;
+  if (!mine || document.hidden) return;
+  try {
+    const html = await (await fetch(location.pathname, { cache: 'no-store' })).text();
+    const online = html.match(/<meta name="build" content="(\w+)"/)?.[1];
+    $('#update-banner').hidden = !online || online === mine;
+  } catch {}
+}
+setInterval(checkForUpdate, 10 * 60 * 1000);
+document.addEventListener('visibilitychange', checkForUpdate);
+$('#btn-update').addEventListener('click', () => location.reload());
+
 // ---------- Solver (in a background worker when possible) ----------
 
 let worker = null;
@@ -262,7 +284,7 @@ const pending = new Map();
 
 function solveInWorker(problem, options) {
   if (!worker) {
-    worker = new Worker(new URL('./solver-worker.js', import.meta.url), { type: 'module' });
+    worker = new Worker(versioned('./js/solver-worker.js'), { type: 'module' });
     worker.onmessage = (e) => {
       const { id, result, error } = e.data;
       const job = pending.get(id);

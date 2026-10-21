@@ -23,6 +23,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { overflow-x: clip; }
 body { margin: 0; background: var(--bg); font-size: 15px; line-height: 1.4; }
 h2 { font-size: 1.1rem; margin: 0 0 0.7rem; letter-spacing: -0.01em; }
@@ -53,6 +54,7 @@ button.link.light { color: #fff; opacity: 0.92; }
 main { max-width: 1200px; margin: 0 auto; padding: 1rem; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.1rem; margin-bottom: 1rem; box-shadow: var(--shadow); min-width: 0; }
 .banner { max-width: 1168px; margin: 1rem auto 0; padding: 0.7rem 1rem; border-radius: var(--radius); }
+.banner.update { background: #e8f2ea; border: 1px solid #9cc5a4; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; flex-wrap: wrap; }
 .banner.warn { background: var(--warn-bg); border: 1px solid var(--warn-line); }
 
 /* ---------- Layout helpers ---------- */
