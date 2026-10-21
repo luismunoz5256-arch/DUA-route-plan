@@ -9,7 +9,7 @@ import { t } from './i18n.js';
 // Same list as SECRETARY_SETTINGS in apps-script/Code.gs.
 const SECRETARY_SETTINGS = ['driverCount', 'drivers', 'balance'];
 
-let hooks = { remoteChanged() {}, status() {}, loggedOut() {} };
+let hooks = { remoteChanged() {}, qbChanged() {}, status() {}, loggedOut() {} };
 let timer = null;
 let running = false;
 let again = false;
@@ -28,13 +28,19 @@ export async function syncNow() {
   running = true;
   hooks.status(t('Syncing…'));
   try {
-    const { data: remote, user } = await api.call('pull');
+    const { data: pulled, user } = await api.call('pull');
     api.updateUser(user);
     if (user.role === 'driver') {
       const before = canonical({ r: store.getRoutes(), d: store.getDone() });
-      store.importDriverData(remote);
+      store.importDriverData(pulled);
       if (canonical({ r: store.getRoutes(), d: store.getDone() }) !== before) hooks.remoteChanged();
     } else {
+      // QuickBooks invoices belong to the server (the office PC helper sends them); kept apart.
+      const { qb = null, ...rest } = pulled || {};
+      const remote = pulled ? rest : null;
+      const qbBefore = store.getQb();
+      store.saveQb(qb);
+      const qbNew = canonical(qb?.days || null) !== canonical(qbBefore?.days || null);
       const local = store.exportSyncData();
       const merged = mergeData(local, remote);
       // A computer joining for the first time takes the shared settings, never the other way round.
@@ -48,6 +54,11 @@ export async function syncNow() {
       if (mergedText !== canonical(local)) {
         store.importSyncData(merged);
         hooks.remoteChanged();
+      }
+      try {
+        hooks.qbChanged(qbNew);
+      } catch (err) {
+        console.error(err); // a problem showing invoices must not stop the sync
       }
       if (!remote || mergedText !== canonical(remote)) await api.call('push', { data: merged });
     }

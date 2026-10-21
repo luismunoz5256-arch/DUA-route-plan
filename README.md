@@ -153,6 +153,42 @@ The Geotab login is stored only on your Google Sheet server. It's never sent to 
 
 A stop counts as reached when the truck stops within 200 meters of the client's address. You can change that distance in Settings.
 
+## 4c. Connect QuickBooks Desktop (optional, admin)
+
+When the secretary saves an invoice in QuickBooks, its client is checked in the planner for the invoice's date. If routes are already out, the stop goes onto a truck right away and shows as **New** on that driver's phone. A voided or deleted invoice takes the stop off again. When orders close, all that's left is **Set final driving order** (or **Build routes**) and **Print route sheets**.
+
+How it works: QuickBooks Desktop has no online connection, so a small helper runs on the office PC where QuickBooks is open. Every minute it reads the invoices dated today through the next 6 days and sends them to the planner. It only reads invoices; it never changes anything in QuickBooks.
+
+- **Matching clients:** an invoice goes to the client with the same **QuickBooks customer name** (field in the client form), or the same name. A customer the planner doesn't know yet is added automatically from the invoice's ship-to address (bill-to if there's no ship-to) and found on the map. If the planner adds a duplicate of a client you already had under a different name, delete the new one and type the QuickBooks name into the old client.
+- **Regulars:** clients who usually order that day are still checked in the morning, so drivers can load early. The Stops list shows which checked stops have an invoice (🧾) and which don't, with **Uncheck them** for the ones that never ordered.
+- If you uncheck an invoiced stop by hand, it stays unchecked.
+
+**A. Update the Google Sheet script** (once, because the script gained the QuickBooks connection): open your Sheet → **Extensions → Apps Script**, replace everything with the new [`apps-script/Code.gs`](apps-script/Code.gs) (keep your `SETUP_CODE` line), **Save**, then **Deploy → Manage deployments → ✎ Edit → Version: New version → Deploy**.
+
+**B. Get the two files.** In the planner, log in as admin and open **Settings → QuickBooks Desktop**:
+1. **Download the helper** → `qb-sync.ps1`.
+2. **Download its settings file** → `qb-settings.json`. It holds your server address and a key that lets the helper send invoices (and nothing else). Making a new key stops the old one.
+
+**C. Set it up on the office PC** where the secretary has QuickBooks open (in multi-user mode that's her PC; QuickBooks has to be open and logged in during order hours):
+1. Make a folder, e.g. `C:\DUA-QuickBooks`, and put both files in it.
+2. Open QuickBooks with the company file, logged in as **Admin**. Check **Edit → Preferences → Integrated Applications → Company Preferences**: "Don't allow any applications to access this company file" must be **off**.
+3. Open **PowerShell** (Start menu → type PowerShell), then run:
+   ```
+   cd C:\DUA-QuickBooks
+   powershell -ExecutionPolicy Bypass -File .\qb-sync.ps1 -Test
+   ```
+4. QuickBooks asks whether to let **DUA Route Planner** access the company file. Choose **"Yes, always"** and **Continue**. (If QuickBooks says this needs single-user mode, switch with **File → Switch to Single-user Mode**, run the test again, then switch back to multi-user.)
+5. The test lists the invoices it found (date, number, customer, address) and sends nothing. Check that the addresses look right.
+6. Install it so it runs in the background now and every time Windows starts:
+   ```
+   powershell -ExecutionPolicy Bypass -File .\qb-sync.ps1 -Install
+   ```
+7. Within a minute, **Settings → QuickBooks Desktop** in the planner says when the helper last sent invoices. The Stops list warns if it hasn't heard from the helper for 10 minutes (usually because QuickBooks was closed).
+
+To stop it: `powershell -ExecutionPolicy Bypass -File .\qb-sync.ps1 -Uninstall`. Everything it does is written to `qb-sync.log` in the same folder.
+
+If the test says **QBXMLRP2 is missing**, the QuickBooks connector isn't installed on that PC. Install the free **QuickBooks Desktop SDK** from Intuit's developer site (developer.intuit.com → QuickBooks Desktop → SDK), then try again.
+
 ## 5. Daily use
 
 1. **Plan routes** → pick the date. Clients who usually order that weekday are already checked.
@@ -188,6 +224,7 @@ Driver phones check for changes every minute while the app is open (and right aw
 - `js/api.js`, `js/sync.js` and `js/merge.js`: login calls and keeping the browser in step with the Sheet. Records merge by last edit, and deletes carry over.
 - `js/matrix.js` and `js/google.js`: Google Routes API `computeRouteMatrix` (`TRAFFIC_AWARE`) and Geocoding API, called from the browser and cached in `localStorage`.
 - `js/store.js`: everything saved in `localStorage` under `dua.*` keys.
+- `quickbooks/qb-sync.ps1`: the QuickBooks Desktop helper (Windows PowerShell 5.1). It asks QuickBooks for invoices with qbXML (`InvoiceQueryRq` by date, through the `QBXMLRP2.RequestProcessor` COM object) and posts them to the server's `qbPush` action. The server replaces each sent day as a whole, so deleted invoices drop off.
 
 Run locally:
 

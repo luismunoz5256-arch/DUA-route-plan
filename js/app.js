@@ -5,6 +5,7 @@ import { solve, summarize, insertStop, costOf } from './solver.js';
 import { overtimeStart, laborCost, minutesBefore, weekSummary, recordReturn } from './pay.js';
 import { encodeRoute } from './share.js';
 import { initSync, syncNow } from './sync.js';
+import { canonical } from './merge.js';
 import * as api from './api.js';
 import { renderRoute } from './routeview.js';
 import { analyzeDay, parseDuration, minuteOfDay } from './tracking.js';
@@ -350,6 +351,12 @@ function loadDay(date) {
   day.weekHours ||= {};
   plan = store.getPlan(date);
   suggestion = null;
+  // Stops checked or unchecked (e.g. by QuickBooks) while another day was open.
+  if (plan) {
+    const inPlan = new Set(plan.stops.map((s) => s.id));
+    for (const id of Object.keys(day.selected)) if (!inPlan.has(id) && clients.some((c) => c.id === id)) addToPlan(id);
+    for (const id of inPlan) if (!day.selected[id]) removeFromPlan(id);
+  }
   $('#plan-shift').value = day.shiftStart || settings.shiftStart;
   $('#plan-start').value = day.start || settings.start;
   $('#plan-end').value = day.latestReturn || settings.latestReturn;
@@ -400,7 +407,6 @@ function renderStops() {
   $('#no-clients').hidden = clients.length > 0;
   const learned = usualDrivers();
   const assigned = assignedDrivers(plan);
-  const k = plan ? viewOption().k : settings.driverCount;
   // On a route: that driver, in the route's colour. Otherwise: who usually takes them.
   const driverTag = (c) => {
     const on = assigned.get(c.id);
@@ -415,7 +421,7 @@ function renderStops() {
       const s = day.selected[c.id];
       return `<tr data-id="${esc(c.id)}" class="${s ? 'selected' : ''}">
         <td class="pick"><input type="checkbox" data-f="on" ${s ? 'checked' : ''} aria-label="${esc(c.name)}" /></td>
-        <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ` <span class="tag good">${t('regular today')}</span>` : ''}${driverTag(c)}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</div></td>
+        <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ` <span class="tag good">${t('regular today')}</span>` : ''}${s?.qb?.length ? ` <span class="tag invoice">🧾 ${s.qb.map((r) => '#' + esc(r)).join(' ')}</span>` : ''}${driverTag(c)}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</div></td>
         <td class="small"${label('Usual days')}>${esc(daysText(c.days))}</td>
         <td class="small"${label('Unload')}>${num(c.unload, settings.defaultUnload)} min</td>
         <td class="prio"${label('Priority')}><input type="checkbox" data-f="priority" ${s?.priority ? 'checked' : ''} ${s ? '' : 'disabled'} aria-label="${t('Priority')}" /></td>
@@ -427,6 +433,7 @@ function renderStops() {
   const ids = new Set(clients.map((c) => c.id));
   const n = Object.keys(day.selected).filter((id) => ids.has(id)).length;
   $('#stop-count').textContent = t('({n} selected for {day})', { n, day: DAYS[weekday] });
+  renderQbNote();
 }
 
 $('#stop-rows').addEventListener('change', onStopEdit);
@@ -440,8 +447,13 @@ function onStopEdit(e) {
   const f = e.target.dataset.f;
   if (!id || !f) return;
   if (f === 'on') {
+    // An invoiced stop unchecked by hand stays unchecked when QuickBooks sends it again.
+    day.qbSkip = (day.qbSkip || []).filter((x) => x !== id);
     if (e.target.checked) day.selected[id] = newSelection();
-    else delete day.selected[id];
+    else {
+      if (day.selected[id]?.qb) day.qbSkip.push(id);
+      delete day.selected[id];
+    }
     saveDay();
     renderStops();
     if (plan) (e.target.checked ? addToPlan : removeFromPlan)(id);
@@ -550,6 +562,7 @@ async function buildRoutes() {
   const depot = depotPoint();
   if (!depot) return alert(t('Set the warehouse location in Settings first.'));
   const chosen = clients.filter((c) => day.selected[c.id]);
+  saveDay(); // so every office computer has the same stops as the plan
   if (!chosen.length) return alert(t('Check at least one stop.'));
   const shiftStart = toMin($('#plan-shift').value);
   const start = toMin($('#plan-start').value);
@@ -1045,6 +1058,128 @@ function updatePlannedStop(id) {
   renderResults();
 }
 
+// ---------- QuickBooks Desktop invoices ----------
+// The helper on the office PC (quickbooks/qb-sync.ps1) sends every invoice dated over the next
+// few days. Each invoice checks its client's stop for that date (adding the client if it's new),
+// and goes onto a truck right away if the routes are already out. A stop that was checked only
+// because of an invoice is unchecked again when the invoice is voided or deleted.
+
+const QB_STALE_MIN = 10; // the helper sends every minute; warn after this many minutes of silence
+const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+const qbDisplayName = (fullName) => String(fullName).split(':').join(' – ');
+
+// The client for a QuickBooks customer: linked before, same QuickBooks name, or same name.
+// Adds a new client (from the invoice's ship-to address) if there is none.
+function qbClient(inv) {
+  let c =
+    clients.find((x) => x.qbId && x.qbId === inv.cid) ||
+    clients.find((x) => !x.qbId && x.qbName && norm(x.qbName) === norm(inv.cname)) ||
+    clients.find((x) => !x.qbId && norm(x.name) === norm(qbDisplayName(inv.cname)));
+  if (c) {
+    if (c.qbId !== inv.cid || c.active === false) Object.assign(c, { qbId: inv.cid, active: true });
+    return { c, isNew: false };
+  }
+  c = {
+    id: 'qb-' + inv.cid.replace(/[^A-Za-z0-9-]/g, ''),
+    active: true,
+    name: qbDisplayName(inv.cname),
+    qbId: inv.cid,
+    qbName: inv.cname,
+    address: inv.address,
+    lat: null,
+    lng: null,
+    unload: settings.defaultUnload,
+    open: '',
+    close: '',
+    notes: '',
+    days: [false, false, false, false, false, false, false],
+  };
+  clients.push(c);
+  return { c, isNew: true };
+}
+
+// Brings the checked stops of every coming day in line with the invoices.
+function applyQuickBooks() {
+  const qb = store.getQb();
+  if (!qb?.days || !day || !['admin', 'secretary'].includes(role())) return;
+  const before = canonical(clients);
+  const fresh = [];
+  for (const [date, invoices] of Object.entries(qb.days)) {
+    if (date < localDate()) continue;
+    const refs = new Map(); // client id -> invoice numbers
+    for (const inv of invoices) {
+      if (inv.voided || !inv.cid) continue;
+      const { c, isNew } = qbClient(inv);
+      if (isNew) fresh.push(c);
+      refs.set(c.id, [...(refs.get(c.id) || []), inv.ref || inv.id]);
+    }
+    const d = date === planDate ? day : store.getDay(date) || newDay(date);
+    const was = canonical(d.selected);
+    const added = [];
+    const removed = [];
+    for (const id of d.qbSkip || []) refs.delete(id);
+    for (const [id, list] of refs) {
+      if (d.selected[id]) d.selected[id].qb = list;
+      else {
+        d.selected[id] = { ...newSelection(), qb: list, fromQb: true };
+        added.push(id);
+      }
+    }
+    for (const [id, sel] of Object.entries(d.selected)) {
+      if (!sel.qb || refs.has(id)) continue;
+      if (sel.fromQb) {
+        delete d.selected[id];
+        removed.push(id);
+      } else delete sel.qb; // checked by hand or a regular: stays checked
+    }
+    if (canonical(d.selected) === was) continue;
+    if (date !== planDate) {
+      store.saveDay(date, d);
+      continue;
+    }
+    saveDay();
+    if (plan) {
+      for (const id of added) addToPlan(id);
+      for (const id of removed) removeFromPlan(id);
+    }
+  }
+  if (canonical(clients) !== before) saveClients();
+  if (fresh.length && settings.apiKey) locateClients(fresh).then(() => currentTab() === 'clients' && renderClients());
+  renderStops();
+  if (currentTab() === 'clients') renderClients();
+}
+
+// Line under the Stops title: what QuickBooks sent for this day, and checked stops with no invoice.
+function renderQbNote() {
+  const qb = store.getQb();
+  const el = $('#qb-note');
+  el.hidden = !qb?.lastSeen;
+  if (el.hidden) return;
+  const ids = new Set(clients.map((c) => c.id));
+  const sel = Object.entries(day.selected).filter(([id]) => ids.has(id));
+  const invoiced = sel.filter(([, s]) => s.qb?.length).length;
+  const missing = sel.filter(([, s]) => !s.qb?.length).map(([id]) => clients.find((c) => c.id === id).name);
+  const ago = Math.round((Date.now() - qb.lastSeen) / 60000);
+  const parts = [`🧾 ${t('QuickBooks: {n} stop(s) with an invoice for this day.', { n: invoiced })}`];
+  parts.push(ago > QB_STALE_MIN && planDate >= localDate()
+    ? `<span class="warn-text">⚠ ${t('The QuickBooks helper last checked in {time}. Is QuickBooks open on the office PC?', { time: new Date(qb.lastSeen).toLocaleString(locale, { weekday: 'short', hour: 'numeric', minute: '2-digit' }) })}</span>`
+    : `<span class="muted">${t('Checked {n} min ago.', { n: ago })}</span>`);
+  if (missing.length) {
+    parts.push(`<br>${t('Checked but no invoice yet: {names}.', { names: missing.map(esc).join(', ') })} <button class="link" id="btn-uncheck-uninvoiced">${t('Uncheck them')}</button>`);
+  }
+  el.innerHTML = parts.join(' ');
+}
+
+$('#qb-note').addEventListener('click', (e) => {
+  if (!e.target.closest('#btn-uncheck-uninvoiced')) return;
+  const ids = Object.entries(day.selected).filter(([, s]) => !s.qb?.length).map(([id]) => id);
+  if (!confirm(t('Uncheck {n} stop(s) that have no QuickBooks invoice?', { n: ids.length }))) return;
+  for (const id of ids) delete day.selected[id];
+  saveDay();
+  renderStops();
+  if (plan) for (const id of ids) removeFromPlan(id);
+});
+
 // ---------- Final driving order ----------
 
 function renderFinal() {
@@ -1312,7 +1447,7 @@ function openClient(c) {
   cform.elements.homeDriver.innerHTML =
     `<option value="">${learned ? t('Automatic (now {name})', { name: esc(learned) }) : t('Automatic (from past routes)')}</option>` +
     [...new Set([...settings.drivers.slice(0, MAX_DRIVERS), v.homeDriver].filter(Boolean))].map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
-  for (const f of ['name', 'address', 'lat', 'lng', 'unload', 'open', 'close', 'notes', 'homeDriver']) cform.elements[f].value = v[f] ?? '';
+  for (const f of ['name', 'address', 'lat', 'lng', 'unload', 'open', 'close', 'notes', 'homeDriver', 'qbName']) cform.elements[f].value = v[f] ?? '';
   cform.querySelectorAll('[data-day]').forEach((cb) => (cb.checked = !!v.days?.[cb.dataset.day]));
   $('#client-locate-msg').textContent = '';
   dialog.showModal();
@@ -1363,8 +1498,11 @@ cform.addEventListener('submit', async (e) => {
     close: el.close.value,
     notes: el.notes.value.trim(),
     homeDriver: el.homeDriver.value,
+    qbName: el.qbName.value.trim(),
     days: [...cform.querySelectorAll('[data-day]')].map((cb) => cb.checked),
   };
+  // A changed QuickBooks name is linked again by name the next time invoices come in.
+  if (editing && (editing.qbName || '') !== data.qbName) data.qbId = '';
   if (editing) Object.assign(editing, data);
   else clients.push({ id: uid(), active: true, ...data });
   saveClients();
@@ -1461,6 +1599,29 @@ $('#btn-import-csv').addEventListener('click', async () => {
   alert(t('Imported: {added} new, {updated} updated.', { added, updated }) + (missing ? '\n\n' + t('{n} client(s) still need a map location — click "Find missing locations".', { n: missing }) : ''));
 });
 
+// ---------- QuickBooks settings (admin) ----------
+
+function renderQbSettings() {
+  const qb = store.getQb();
+  $('#qb-status').innerHTML = qb?.lastSeen
+    ? `${Date.now() - qb.lastSeen > QB_STALE_MIN * 60000 ? '⚠' : '✓'} ${t('The helper last sent invoices {time}.', { time: new Date(qb.lastSeen).toLocaleString(locale) })}`
+    : `<span class="muted">${t('Not connected yet.')}</span>`;
+}
+
+// A new key (the old one stops working) in a small file the helper reads, next to qb-sync.ps1.
+$('#btn-qb-key').addEventListener('click', (e) => {
+  if (store.getQb()?.lastSeen && !confirm(t('Make a new key? The helper on the office PC stops working until it gets the new settings file.'))) return;
+  busy(e.currentTarget, async () => {
+    try {
+      const { key } = await api.call('qbKey');
+      download('qb-settings.json', JSON.stringify({ server: api.getServerUrl(), key }, null, 2), 'application/json');
+      $('#qb-key-msg').textContent = t('Saved qb-settings.json. Put it in the same folder as qb-sync.ps1 on the office PC.');
+    } catch (err) {
+      $('#qb-key-msg').innerHTML = errorText(err);
+    }
+  });
+});
+
 // ---------- Settings tab ----------
 
 const sform = $('#settings-form');
@@ -1474,6 +1635,7 @@ const DEPOT_LOC = ['depotAddress', 'depotLat', 'depotLng'];
 
 function renderSettings() {
   renderGeotabSettings();
+  renderQbSettings();
   for (const f of SETTING_FIELDS) sform.elements[f].value = settings[f] ?? '';
   const u = store.getUsage();
   $('#usage-line').textContent = t('This month: {e} of {el} drive-time lookups and {g} of {gl} address lookups used (counted by this browser).', {
@@ -2048,6 +2210,7 @@ async function enterApp(user) {
   $('#who').textContent = `${user.username} · ${ROLE_LABEL[user.role]}`;
   await initSync({
     remoteChanged: reloadFromStore,
+    qbChanged: (changed) => (changed ? applyQuickBooks() : day && renderQbNote()),
     status: (s) => ($('#sync-status').textContent = s),
     loggedOut: () => showLogin(t('Please log in again.')),
   });
@@ -2057,6 +2220,7 @@ async function enterApp(user) {
   if (user.role === 'driver') return showTab('driver');
   renderPlanControls();
   loadDay(planDate);
+  applyQuickBooks();
   renderBanner();
   renderResults();
   showTab('plan');

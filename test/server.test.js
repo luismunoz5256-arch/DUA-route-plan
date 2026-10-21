@@ -251,3 +251,38 @@ test('guessing the setup code is locked out after repeated tries', () => {
   for (let i = 0; i < 5; i++) s.call({ action: 'recoverAdmin', setupCode: 'guess' + i, username: 'x', password: 'xxxxxx1' });
   assert.match(s.call({ action: 'recoverAdmin', setupCode: 'test-setup-code', username: 'x', password: 'xxxxxx1' }).error, /Too many/);
 });
+
+test('QuickBooks: only an admin makes the key, and the helper needs it', () => {
+  const { s, admin, sec } = setupServer();
+  assert.match(s.call({ action: 'qbKey', token: sec }).error, /Not allowed/);
+  const push = (key) => s.call({ action: 'qbPush', key, from: '2026-10-21', to: '2026-10-22', invoices: [] });
+  assert.match(push('anything').error, /QuickBooks key/);
+  const { key } = s.call({ action: 'qbKey', token: admin });
+  assert.ok(key.length >= 32);
+  assert.equal(push(key).ok, true);
+  // a new key replaces the old one
+  const next = s.call({ action: 'qbKey', token: admin }).key;
+  assert.match(push(key).error, /QuickBooks key/);
+  assert.equal(push(next).ok, true);
+});
+
+test('QuickBooks: each sent day is replaced, office saves keep it, drivers never see it', () => {
+  const { s, admin, sec, ana } = setupServer();
+  const { key } = s.call({ action: 'qbKey', token: admin });
+  const inv = (id, date, extra = {}) => ({ id, ref: id.toUpperCase(), date, cid: 'L-' + id, cname: 'Cafe ' + id, address: '1 Main St', ...extra });
+  s.call({ action: 'qbPush', key, from: '2026-10-21', to: '2026-10-22', invoices: [inv('a', '2026-10-21'), inv('b', '2026-10-22'), inv('x', '2026-10-30')] });
+  let qb = s.call({ action: 'pull', token: sec }).data.qb;
+  assert.deepEqual(qb.days['2026-10-21'].map((i) => i.id), ['a']);
+  assert.deepEqual(qb.days['2026-10-22'].map((i) => i.id), ['b']);
+  assert.equal(qb.days['2026-10-30'], undefined, 'dates outside from..to are ignored');
+  assert.ok(qb.lastSeen > 0);
+  // invoice b deleted in QuickBooks, a voided
+  s.call({ action: 'qbPush', key, from: '2026-10-21', to: '2026-10-22', invoices: [inv('a', '2026-10-21', { voided: true })] });
+  qb = s.call({ action: 'pull', token: sec }).data.qb;
+  assert.equal(qb.days['2026-10-21'][0].voided, true);
+  assert.deepEqual(qb.days['2026-10-22'], []);
+  // the office pushing its copy (without qb) does not erase it
+  s.call({ action: 'push', token: sec, data: DATA });
+  assert.equal(s.call({ action: 'pull', token: admin }).data.qb.days['2026-10-21'].length, 1);
+  assert.equal(s.call({ action: 'pull', token: ana }).data.qb, undefined);
+});

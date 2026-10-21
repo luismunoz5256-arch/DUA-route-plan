@@ -12,6 +12,9 @@
 //
 // Optional: MyGeotab truck tracking (admin only). The Geotab login is entered in the
 // planner's Settings, kept in this script's properties, and never sent back to browsers.
+//
+// Optional: QuickBooks Desktop link. A helper script on the office PC (quickbooks/qb-sync.ps1)
+// sends the invoices dated over the next few days, using a key the admin creates in Settings.
 
 const SETUP_CODE = 'change-this-to-something-long';
 const SESSION_DAYS = 30;
@@ -49,6 +52,8 @@ function handle(req) {
       return withLock(() => recoverAdmin(req));
     case 'login':
       return withLock(() => login(req));
+    case 'qbPush':
+      return withLock(() => qbPush(req));
   }
   const user = auth(req.token);
   switch (req.action) {
@@ -91,6 +96,9 @@ function handle(req) {
     case 'geotabDay':
       requireRole(user, ['admin']);
       return geotabDay(req);
+    case 'qbKey':
+      requireRole(user, ['admin']);
+      return withLock(() => qbKey());
   }
   throw new Error('Unknown action');
 }
@@ -290,6 +298,7 @@ function push(user, incoming) {
   const cur = load() || {};
   const next = Object.assign({}, incoming);
   next.done = cur.done || {}; // only drivers change these, through markDone
+  next.qb = cur.qb; // only the QuickBooks helper changes this, through qbPush
   if (user.role !== 'admin') {
     const settings = Object.assign({}, cur.settings);
     SECRETARY_SETTINGS.forEach((k) => {
@@ -312,6 +321,52 @@ function markDone(user, req) {
   else delete mine[req.stopId];
   save(data);
   return { done: mine };
+}
+
+// ---------- QuickBooks Desktop link ----------
+
+// A new key for the QuickBooks helper; the old one stops working. Only a hash is kept.
+function qbKey() {
+  const key = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+  const salt = Utilities.getUuid();
+  props().setProperty('qb_key', JSON.stringify({ salt: salt, hash: hash(key, salt), created: Date.now() }));
+  return { key: key };
+}
+
+// The helper sends every invoice dated from..to (at most two weeks). Each of those days is
+// replaced as a whole, so deleted invoices drop off. Shape kept in data.qb:
+//   { lastSeen, days: { "2026-10-21": [{ id, ref, cid, cname, address, voided }] } }
+function qbPush(req) {
+  const saved = JSON.parse(props().getProperty('qb_key') || 'null');
+  limitTries('f_qbkey', () => !!saved && saved.hash === hash(String(req.key || ''), saved.salt), 'Wrong QuickBooks key. Create a new one in the planner\'s Settings.');
+  const isDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d));
+  if (!isDate(req.from) || !isDate(req.to) || req.to < req.from) throw new Error('Bad dates');
+  const dates = [];
+  for (let d = new Date(req.from + 'T12:00:00Z'); dates.length < 15; d.setUTCDate(d.getUTCDate() + 1)) {
+    const text = d.toISOString().slice(0, 10);
+    if (text > req.to) break;
+    dates.push(text);
+  }
+  const text = (v, max) => String(v == null ? '' : v).slice(0, max);
+  const data = load() || {};
+  const qb = (data.qb = data.qb || { days: {} });
+  dates.forEach((d) => (qb.days[d] = []));
+  (Array.isArray(req.invoices) ? req.invoices : []).slice(0, 3000).forEach((inv) => {
+    if (!qb.days[inv.date]) return;
+    qb.days[inv.date].push({
+      id: text(inv.id, 60),
+      ref: text(inv.ref, 30),
+      cid: text(inv.cid, 60),
+      cname: text(inv.cname, 200),
+      address: text(inv.address, 300),
+      voided: !!inv.voided,
+    });
+  });
+  // keep the last 14 days
+  Object.keys(qb.days).sort().slice(0, -14).forEach((d) => delete qb.days[d]);
+  qb.lastSeen = Date.now();
+  save(data);
+  return { ok: true, days: dates.length };
 }
 
 // ---------- MyGeotab (JSON-RPC API, https://developers.geotab.com) ----------

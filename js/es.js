@@ -1,6 +1,23 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "QuickBooks: {n} stop(s) with an invoice for this day.": "QuickBooks: {n} parada(s) con factura para este día.",
+  "The QuickBooks helper last checked in {time}. Is QuickBooks open on the office PC?": "El ayudante de QuickBooks se reportó por última vez el {time}. ¿Está QuickBooks abierto en la PC de la oficina?",
+  "Checked {n} min ago.": "Revisado hace {n} min.",
+  "Checked but no invoice yet: {names}.": "Marcadas pero sin factura todavía: {names}.",
+  "Uncheck them": "Desmarcarlas",
+  "Uncheck {n} stop(s) that have no QuickBooks invoice?": "¿Desmarcar {n} parada(s) que no tienen factura de QuickBooks?",
+  "The helper last sent invoices {time}.": "El ayudante envió facturas por última vez el {time}.",
+  "Not connected yet.": "Todavía no está conectado.",
+  "Make a new key? The helper on the office PC stops working until it gets the new settings file.": "¿Crear una clave nueva? El ayudante en la PC de la oficina deja de funcionar hasta que reciba el nuevo archivo de ajustes.",
+  "Saved qb-settings.json. Put it in the same folder as qb-sync.ps1 on the office PC.": "Se guardó qb-settings.json. Póngalo en la misma carpeta que qb-sync.ps1 en la PC de la oficina.",
+  "Bad dates": "Fechas no válidas",
+  "Wrong QuickBooks key. Create a new one in the planner's Settings.": "Clave de QuickBooks incorrecta. Cree una nueva en Ajustes del planificador.",
+  "QuickBooks Desktop": "QuickBooks Desktop",
+  "A small helper on the office PC where QuickBooks is open sends the invoices every minute. Each invoice checks its client's stop for the invoice date (new customers are added from the ship-to address), and goes onto a truck right away once routes are out. Setup steps are in the README.": "Un pequeño ayudante en la PC de la oficina donde está abierto QuickBooks envía las facturas cada minuto. Cada factura marca la parada de su cliente para la fecha de la factura (los clientes nuevos se agregan con la dirección de envío) y se asigna a un camión de inmediato cuando las rutas ya salieron. Los pasos de instalación están en el README.",
+  "1. Download the helper": "1. Descargar el ayudante",
+  "2. Download its settings file (new key)": "2. Descargar su archivo de ajustes (clave nueva)",
+  "QuickBooks customer name (links invoices to this client)": "Nombre del cliente en QuickBooks (une las facturas a este cliente)",
   "usually {name}": "normalmente {name}",
   "Routes for this day are out. Checking a stop puts it on a truck right away (its usual driver when that makes sense); unchecking takes it off. Other stops never move.": "Las rutas de este día ya se enviaron. Al marcar una parada se asigna a un camión de inmediato (a su chofer de siempre cuando conviene); al desmarcarla se quita. Las demás paradas nunca se mueven.",
   "Uncheck all stops for this day? They also come off the routes already sent to drivers.": "¿Desmarcar todas las paradas de este día? También se quitan de las rutas ya enviadas a los choferes.",

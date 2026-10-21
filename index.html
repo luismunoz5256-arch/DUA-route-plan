@@ -153,6 +153,7 @@
               <button id="btn-select-none" class="secondary">Clear</button>
             </div>
           </div>
+          <p id="qb-note" class="qb-note" hidden></p>
           <div id="live-note" class="live-note" hidden>
             <p id="live-note-text"></p>
             <p id="live-msg" aria-live="polite"></p>
@@ -329,6 +330,17 @@
           </div>
         </div>
 
+        <div class="card" id="qb-card">
+          <h2>QuickBooks Desktop</h2>
+          <p class="muted small">A small helper on the office PC where QuickBooks is open sends the invoices every minute. Each invoice checks its client's stop for the invoice date (new customers are added from the ship-to address), and goes onto a truck right away once routes are out. Setup steps are in the README.</p>
+          <p id="qb-status" class="small"></p>
+          <div class="row wrap gap small-gap">
+            <a class="btn secondary" id="qb-download" href="quickbooks/qb-sync.ps1" download="qb-sync.ps1">1. Download the helper</a>
+            <button id="btn-qb-key" class="secondary">2. Download its settings file (new key)</button>
+          </div>
+          <p id="qb-key-msg" class="small"></p>
+        </div>
+
         <div class="card">
           <h2>Saved drive times</h2>
           <p class="muted small" id="matrix-line"></p>
@@ -365,6 +377,7 @@
             <li>Build the routes first thing in the morning with the regulars. Each client stays with their <b>usual driver</b> (set on the client, or learned from past routes) unless moving them saves more than the amount in Settings. Drivers can start loading right away.</li>
             <li>As orders come in, just check the stop. It goes onto a truck immediately and shows as <span class="tag new">New</span> on that driver's phone. Unchecking a stop takes it off, and the driver's phone says not to deliver it. Nobody else's stops move.</li>
             <li>When orders close (10:00 by default, in Settings), click <b>Set final driving order</b>. Every stop stays on its truck; each driver gets the best order and times. If moving a few stops would save real money, the app suggests it and you decide.</li>
+            <li>With QuickBooks connected (Settings), saving an invoice checks its stop for you, and a voided or deleted invoice unchecks it. 🧾 marks stops that have an invoice; <b>Uncheck them</b> clears regulars that never ordered.</li>
             <li>Drivers' phones check for changes every minute while the app is open.</li>
           </ol>
           <h2>Accounts</h2>
@@ -415,6 +428,7 @@
             <li>Cree las rutas temprano en la mañana con los clientes de siempre. Cada cliente se queda con su <b>chofer de siempre</b> (puesto en el cliente, o aprendido de rutas anteriores) salvo que cambiarlo ahorre más de la cantidad en Ajustes. Los choferes pueden empezar a cargar de inmediato.</li>
             <li>Cuando llegue un pedido, solo marque la parada. Se asigna a un camión al instante y aparece como <span class="tag new">Nueva</span> en el teléfono de ese chofer. Al desmarcarla se quita, y el teléfono del chofer indica que no la entregue. Las paradas de los demás no se mueven.</li>
             <li>Cuando cierren los pedidos (10:00 por defecto, en Ajustes), haga clic en <b>Fijar orden final de manejo</b>. Cada parada se queda en su camión; cada chofer recibe el mejor orden y horarios. Si cambiar algunas paradas ahorra dinero de verdad, la aplicación lo sugiere y usted decide.</li>
+            <li>Con QuickBooks conectado (Ajustes), al guardar una factura se marca su parada sola, y una factura anulada o borrada la desmarca. 🧾 indica las paradas con factura; <b>Desmarcarlas</b> quita a los clientes de siempre que no pidieron.</li>
             <li>Los teléfonos de los choferes revisan cambios cada minuto mientras la aplicación está abierta.</li>
           </ol>
           <h2>Cuentas</h2>
@@ -469,6 +483,7 @@
         </fieldset>
         <label>Unload time (min) <input name="unload" type="number" min="0" /></label>
         <label>Usual driver <select name="homeDriver"></select></label>
+        <label class="span2">QuickBooks customer name (links invoices to this client) <input name="qbName" autocomplete="off" /></label>
         <label>Earliest delivery (optional) <input name="open" type="time" /></label>
         <label>Latest delivery (optional) <input name="close" type="time" /></label>
         <label class="span2">Notes for driver <input name="notes" placeholder="e.g. back door, ask for Maria" /></label>

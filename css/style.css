@@ -132,6 +132,8 @@ table.week td.num, table.week th.num { text-align: right; }
 .live-note { background: #eef4fb; border: 1px solid #c4d7ee; border-radius: 8px; padding: 0.55rem 0.8rem; margin-bottom: 0.7rem; font-size: 0.9rem; }
 .live-note p { margin: 0; }
 .live-note #live-msg:not(:empty) { margin-top: 0.35rem; font-weight: 500; }
+.tag.invoice { background: #efe7fb; color: #5b2f9c; }
+.qb-note { font-size: 0.85rem; margin: 0 0 0.7rem; }
 .tag.on-route { background: var(--route); color: #fff; }
 #final-card h2 { margin: 0; }
 #final-note { margin: 0.6rem 0 0; }

@@ -180,6 +180,15 @@ export function saveRoutesDay(date, drivers) {
   changed();
 }
 
+// QuickBooks invoices sent by the office PC helper (the server's copy; read-only here):
+// { lastSeen, days: { "2026-10-21": [{ id, ref, cid, cname, address, voided }] } }
+export function getQb() {
+  return read('qb', null);
+}
+export function saveQb(qb) {
+  write('qb', qb);
+}
+
 // Stops ticked done by drivers: { date: { driverName: { stopId: time } } } (set by the server)
 export function getDone() {
   return read('done', {});
