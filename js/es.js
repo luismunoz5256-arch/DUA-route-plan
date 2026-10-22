@@ -1,6 +1,15 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "Comparing with letting the planner choose the drivers…": "Comparando con dejar que el planificador elija a los choferes…",
+  "Your driver choices cost about {amount} more than letting the planner choose every driver.": "Sus choferes elegidos cuestan unos {amount} más que dejar que el planificador elija a todos los choferes.",
+  "{name} (always)": "{name} (siempre)",
+  "Auto": "Automático",
+  "Gave {n} stop(s) to their usual driver. Change any of them in the Driver column.": "Se dieron {n} parada(s) a su chofer de siempre. Puede cambiar cualquiera en la columna Chofer.",
+  "No checked stop has a usual driver yet.": "Ninguna parada marcada tiene chofer de siempre todavía.",
+  "Given to this driver by hand": "Asignada a este chofer a mano",
+  "Fill in usual drivers": "Poner choferes de siempre",
+  "Always this driver: never move this client to another truck": "Siempre este chofer: nunca pasar este cliente a otro camión",
   "Comparing with planning from scratch…": "Comparando con planear desde cero…",
   "Stops stayed on the trucks they were already on. Planning from scratch would cost {amount} less, but {n} stop(s) would change trucks.": "Las paradas se quedaron en los camiones donde ya estaban. Planear desde cero costaría {amount} menos, pero {n} parada(s) cambiarían de camión.",
   "Use the plan from scratch": "Usar el plan desde cero",

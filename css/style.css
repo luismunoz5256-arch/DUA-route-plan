@@ -107,6 +107,7 @@ th { font-size: 0.75rem; color: var(--muted); font-weight: 600; white-space: now
 tbody tr:last-child td { border-bottom: 0; }
 table.stops tr.selected { background: var(--brand-soft); }
 table.stops input[type='time'] { width: 7.5rem; }
+table.stops td.drv select { font-size: 0.85rem; padding: 0.3rem 0.4rem; max-width: 9rem; }
 table.stops input.note { width: 100%; min-width: 10rem; }
 td.addr, td .addr { font-size: 0.85rem; color: var(--muted); font-weight: 400; }
 td.name { font-weight: 600; }
@@ -285,9 +286,11 @@ body[data-role='driver'] main { padding: 0; }
   table.stops.stack td.name { grid-row: 1; grid-column: 2 / -1; }
   table.stops.stack td[data-label] { grid-column: 2 / -1; }
   table.stops.stack td.by input { width: 9rem; }
+  table.stops.stack td.drv select { font-size: 16px; max-width: none; width: 11rem; }
   table.stops.stack td.by:has(input:disabled) { display: none; }
   table.stops.stack td.note-cell { flex-direction: column; align-items: stretch; gap: 0.2rem; }
   table.stops.stack input.note { min-width: 0; }
+  table.stops.stack tr:not(.selected) td.drv,
   table.stops.stack tr:not(.selected) td.prio,
   table.stops.stack tr:not(.selected) td.by,
   table.stops.stack tr:not(.selected) td.note-cell { display: none; }

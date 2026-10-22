@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <meta name="build" content="9ecc83e8" />
+    <meta name="build" content="7c353d41" />
     <title>DUA Route Planner</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
@@ -15,7 +15,7 @@
     <meta name="apple-mobile-web-app-title" content="DUA Routes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
-    <link rel="stylesheet" href="css/style.css?v=94b37dff" />
+    <link rel="stylesheet" href="css/style.css?v=97ab232a" />
     <link rel="stylesheet" href="css/driver.css?v=586c307f" />
   </head>
   <body class="logged-out">
@@ -153,6 +153,7 @@
             <div class="row wrap gap small-gap">
               <input type="search" id="stop-search" placeholder="Search clients…" />
               <button id="btn-select-scheduled" class="secondary">Select today's regulars</button>
+              <button id="btn-fill-drivers" class="secondary">Fill in usual drivers</button>
               <button id="btn-select-none" class="secondary">Clear</button>
             </div>
           </div>
@@ -167,6 +168,7 @@
                 <tr>
                   <th></th>
                   <th>Client</th>
+                  <th>Driver</th>
                   <th>Usual days</th>
                   <th>Unload</th>
                   <th>Priority</th>
@@ -195,6 +197,7 @@
             <div class="table-wrap"><table class="compare stack"><tbody id="compare-rows"></tbody></table></div>
             <p id="best-hint" class="best-hint" hidden></p>
             <p id="fresh-hint" class="best-hint" hidden></p>
+            <p id="free-hint" class="muted small" hidden></p>
             <p id="data-note" class="muted small"></p>
           </div>
           <div class="card noprint" id="final-card">
@@ -380,7 +383,8 @@
             <li>Check or uncheck stops to match today's orders. Tick <b>Priority</b> for anything that must arrive early and set its <b>Deliver by</b> time.</li>
             <li>Choose the number of drivers. Check each driver's hours so far this week (filled in from History).</li>
             <li>Click <b>Build routes</b>. You see the plan for the number of drivers you picked. <b>Compare driver counts</b> also shows one driver fewer and one more, with labor (overtime at 1.5×) and fuel. The cheapest on-time plan is marked <span class="tag good">Best</span>; click its row (or <b>Show that plan</b>) to switch to it.</li>
-            <li>Need a change? Use ▲ ▼ to reorder a stop, or <b>Move to</b> to give it to another driver. Times and cost update right away.</li>
+            <li>Want to decide who takes what? In the stop list's <b>Driver</b> column, pick a driver for any stop (or <b>Fill in usual drivers</b>), then <b>Build routes</b>: those stops stay with that driver and the app works out the best order, giving the rest to whoever is cheapest. The results say what your choices cost compared with letting the app choose. A client marked <b>Always this driver</b> (in the client form) goes to their usual driver every day.</li>
+            <li>Need a change? Use ▲ ▼ to reorder a stop, or <b>Move to</b> to give it to another driver (it stays with that driver if you build again). Times and cost update right away.</li>
             <li>Drivers see their route as soon as they log in on their phone (or send a <b>phone link</b> / print the sheets).</li>
           </ol>
           <h2>Loading while orders come in</h2>
@@ -432,7 +436,8 @@
             <li>Marque o desmarque paradas según los pedidos de hoy. Marque <b>Prioridad</b> en lo que debe llegar temprano y ponga su hora en <b>Entregar antes de</b>.</li>
             <li>Elija el número de choferes. Revise las horas de cada chofer en lo que va de la semana (vienen del Historial).</li>
             <li>Haga clic en <b>Crear rutas</b>. Verá el plan con el número de choferes que eligió. <b>Comparar número de choferes</b> también muestra un chofer menos y uno más, con mano de obra (tiempo extra a 1.5×) y combustible. El plan más barato a tiempo está marcado como <span class="tag good">Mejor</span>; haga clic en su fila (o en <b>Ver ese plan</b>) para cambiar a él.</li>
-            <li>¿Necesita un cambio? Use ▲ ▼ para reordenar una parada, o <b>Mover a…</b> para dársela a otro chofer. Las horas y el costo se actualizan al instante.</li>
+            <li>¿Quiere decidir quién lleva qué? En la columna <b>Chofer</b> de la lista de paradas, elija un chofer para cualquier parada (o <b>Poner choferes de siempre</b>) y luego <b>Crear rutas</b>: esas paradas se quedan con ese chofer y la aplicación calcula el mejor orden, dando las demás a quien salga más barato. Los resultados dicen cuánto cuestan sus elecciones comparado con dejar que la aplicación elija. Un cliente marcado <b>Siempre este chofer</b> (en el formulario del cliente) va con su chofer de siempre todos los días.</li>
+            <li>¿Necesita un cambio? Use ▲ ▼ para reordenar una parada, o <b>Mover a…</b> para dársela a otro chofer (se queda con ese chofer si vuelve a crear las rutas). Las horas y el costo se actualizan al instante.</li>
             <li>Los choferes ven su ruta en cuanto entran en su teléfono (o envíe el <b>enlace para teléfono</b> / imprima las hojas).</li>
           </ol>
           <h2>Cargar mientras llegan pedidos</h2>
@@ -496,6 +501,7 @@
         </fieldset>
         <label>Unload time (min) <input name="unload" type="number" min="0" /></label>
         <label>Usual driver <select name="homeDriver"></select></label>
+        <label class="inline span2"><input type="checkbox" name="fixedDriver" /> Always this driver: never move this client to another truck</label>
         <label class="span2">QuickBooks customer name (links invoices to this client) <input name="qbName" autocomplete="off" /></label>
         <label>Earliest delivery (optional) <input name="open" type="time" /></label>
         <label>Latest delivery (optional) <input name="close" type="time" /></label>
@@ -517,7 +523,7 @@
     </dialog>
 
     <script src="vendor/leaflet/leaflet.js"></script>
-    <script type="importmap">{"imports":{"./js/api.js":"./js/api.js?v=e1a24704","./js/app.js":"./js/app.js?v=e0910dc8","./js/config.js":"./js/config.js?v=68783d5e","./js/driver.js":"./js/driver.js?v=ed87f02d","./js/es.js":"./js/es.js?v=ba3f75d3","./js/google.js":"./js/google.js?v=bab7fb1a","./js/i18n.js":"./js/i18n.js?v=7236dc39","./js/maps.js":"./js/maps.js?v=6347d58e","./js/matrix.js":"./js/matrix.js?v=eb436f77","./js/merge.js":"./js/merge.js?v=542310c3","./js/pay.js":"./js/pay.js?v=3a38de1c","./js/routeview.js":"./js/routeview.js?v=6593b23b","./js/share.js":"./js/share.js?v=b023bbd3","./js/solver-worker.js":"./js/solver-worker.js?v=05205095","./js/solver.js":"./js/solver.js?v=8db9c63d","./js/store.js":"./js/store.js?v=b18db2de","./js/sync.js":"./js/sync.js?v=5246dd06","./js/tracking.js":"./js/tracking.js?v=5612cc24","./js/util.js":"./js/util.js?v=1ecf69be"}}</script>
-    <script type="module" src="js/app.js?v=e0910dc8"></script>
+    <script type="importmap">{"imports":{"./js/api.js":"./js/api.js?v=e1a24704","./js/app.js":"./js/app.js?v=9af2f26e","./js/config.js":"./js/config.js?v=68783d5e","./js/driver.js":"./js/driver.js?v=ed87f02d","./js/es.js":"./js/es.js?v=65b3896f","./js/google.js":"./js/google.js?v=bab7fb1a","./js/i18n.js":"./js/i18n.js?v=7236dc39","./js/maps.js":"./js/maps.js?v=6347d58e","./js/matrix.js":"./js/matrix.js?v=eb436f77","./js/merge.js":"./js/merge.js?v=542310c3","./js/pay.js":"./js/pay.js?v=3a38de1c","./js/routeview.js":"./js/routeview.js?v=6593b23b","./js/share.js":"./js/share.js?v=b023bbd3","./js/solver-worker.js":"./js/solver-worker.js?v=05205095","./js/solver.js":"./js/solver.js?v=8db9c63d","./js/store.js":"./js/store.js?v=b18db2de","./js/sync.js":"./js/sync.js?v=5246dd06","./js/tracking.js":"./js/tracking.js?v=5612cc24","./js/util.js":"./js/util.js?v=1ecf69be"}}</script>
+    <script type="module" src="js/app.js?v=9af2f26e"></script>
   </body>
 </html>

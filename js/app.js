@@ -359,6 +359,8 @@ function problemFor(p, k) {
     vehicles: k,
     home: [null, ...p.stops.map((s) => (s.home ? index(s.home) : null))],
     away: perMinute ? num(settings.keepWithDriver, 10) / perMinute : 0,
+    // Stops given to a driver by hand never go to another truck.
+    lock: [null, ...p.stops.map((s) => (s.driver ? index(s.driver) : null))],
   };
 }
 
@@ -403,6 +405,10 @@ function evaluateAll(p) {
 // ---------- Plan tab ----------
 
 const newSelection = () => ({ priority: false, by: settings.priorityBy, note: '' });
+
+// The driver who must take this stop: chosen for the day in the stop list, else the client's
+// usual driver when the client is set to "Always this driver". '' = the planner decides.
+const assignedDriver = (c, sel) => sel?.driver || (c.fixedDriver ? c.homeDriver : '') || '';
 
 function newDay(date) {
   const weekday = weekdayOf(date);
@@ -484,12 +490,20 @@ function renderStops() {
   if (isLearning()) $('#learn-note').textContent = '🎓 ' + t('Learning usual drivers until {date}: routes are planned the cheapest way each day, and each area keeps the same driver from day to day.', { date: fmtDateLong(settings.learnUntil) });
   $('#live-note').hidden = !plan;
   if (plan) $('#live-note-text').textContent = t('Routes for this day are out. Checking a stop puts it on a truck right away (its usual driver when that makes sense); unchecking takes it off. Other stops never move.');
+  // Who takes each checked stop: the planner ("Auto") or a driver picked here.
+  const k = plan ? viewOption().k : settings.driverCount;
+  const driverPick = (c, s) => {
+    const names = [...new Set([...Array.from({ length: k }, (_, i) => driverName(i)), s?.driver].filter(Boolean))];
+    const auto = c.fixedDriver && c.homeDriver ? t('{name} (always)', { name: c.homeDriver }) : t('Auto');
+    return `<select data-f="driver" ${s ? '' : 'disabled'} aria-label="${t('Driver')}"><option value="">${esc(auto)}</option>${names.map((n) => `<option value="${esc(n)}" ${s?.driver === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>`;
+  };
   $('#stop-rows').innerHTML = list
     .map((c) => {
       const s = day.selected[c.id];
       return `<tr data-id="${esc(c.id)}" class="${s ? 'selected' : ''}">
         <td class="pick"><input type="checkbox" data-f="on" ${s ? 'checked' : ''} aria-label="${esc(c.name)}" /></td>
         <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ` <span class="tag good">${t('regular today')}</span>` : ''}${c.dayHours?.[weekday] ? ` <span class="tag prio">⏰ ${esc(hoursText(hoursOn(c, weekday)))}</span>` : ''}${s?.qb?.length ? ` <span class="tag invoice">🧾 ${s.qb.map((r) => '#' + esc(r)).join(' ')}</span>` : ''}${driverTag(c)}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</div></td>
+        <td class="drv"${label('Driver')}>${driverPick(c, s)}</td>
         <td class="small"${label('Usual days')}>${esc(daysText(c.days))}</td>
         <td class="small"${label('Unload')}>${num(c.unload, settings.defaultUnload)} min</td>
         <td class="prio"${label('Priority')}><input type="checkbox" data-f="priority" ${s?.priority ? 'checked' : ''} ${s ? '' : 'disabled'} aria-label="${t('Priority')}" /></td>
@@ -534,9 +548,34 @@ function onStopEdit(e) {
     tr.querySelector('[data-f="by"]').disabled = !s.priority;
   } else if (f === 'by') s.by = e.target.value;
   else if (f === 'note') s.note = e.target.value;
+  else if (f === 'driver') {
+    if (e.target.value) s.driver = e.target.value;
+    else delete s.driver;
+    saveDay();
+    return updatePlannedDriver(id);
+  }
   saveDay();
   if (e.type === 'change') updatePlannedStop(id);
 }
+
+// Gives every checked stop without a driver its client's usual driver (set by hand or learned).
+$('#btn-fill-drivers').addEventListener('click', () => {
+  const learned = usualDrivers();
+  const k = plan ? viewOption().k : settings.driverCount;
+  const names = Array.from({ length: k }, (_, i) => driverName(i));
+  let n = 0;
+  for (const [id, s] of Object.entries(day.selected)) {
+    const c = clients.find((x) => x.id === id);
+    const usual = c && (c.homeDriver || learned.get(id));
+    if (!c || s.driver || !names.includes(usual)) continue;
+    s.driver = usual;
+    n++;
+    if (plan) updatePlannedDriver(id);
+  }
+  saveDay();
+  renderStops();
+  alert(n ? t('Gave {n} stop(s) to their usual driver. Change any of them in the Driver column.', { n }) : t('No checked stop has a usual driver yet.'));
+});
 
 $('#plan-date').addEventListener('change', (e) => {
   if (!e.target.value) return;
@@ -620,7 +659,7 @@ function stopFromClient(c, sel, home = '') {
   const prio = sel.priority ? toMin(sel.by || settings.priorityBy) : null;
   const close = toMin(hours.close);
   return {
-    id: c.id, name: c.name, address: c.address, lat: Number(c.lat), lng: Number(c.lng), home,
+    id: c.id, name: c.name, address: c.address, lat: Number(c.lat), lng: Number(c.lng), home, driver: assignedDriver(c, sel),
     unload: num(c.unload, settings.defaultUnload), notes: c.notes || '', today: sel.note || '',
     priority: !!sel.priority, by: sel.priority ? sel.by || settings.priorityBy : '',
     open: toMin(hours.open), due: prio == null ? close : close == null ? prio : Math.min(prio, close),
@@ -703,7 +742,7 @@ async function buildRoutes() {
           weights: { balance: BALANCE[settings.balance] ?? 0.15 },
         });
         let orders = r.routes.map((x) => x.order);
-        if (isLearning() && !old) orders = sameAreaSameDriver(orders, vehicles);
+        if (isLearning() && !old && !plan.stops.some((s) => s.driver)) orders = sameAreaSameDriver(orders, vehicles);
         plan.options.push({ k: vehicles, orders, original: orders.map((o) => o.slice()) });
       }
       // Stops kept the trucks they were on. Also plan from scratch, and offer that if it's cheaper.
@@ -712,13 +751,21 @@ async function buildRoutes() {
         const scratch = { ...plan, stops: plan.stops.map((s) => ({ ...s, home: homeOf(clients.find((c) => c.id === s.id), learned) })) };
         const r = await runSolve(problemFor(scratch, k), { timeLimitMs: 2500, weights: { balance: BALANCE[settings.balance] ?? 0.15 } });
         let orders = r.routes.map((x) => x.order);
-        if (isLearning()) orders = sameAreaSameDriver(orders, k);
+        if (isLearning() && !plan.stops.some((s) => s.driver)) orders = sameAreaSameDriver(orders, k);
         const kept = plan.options.find((o) => o.k === k);
         const saves = evaluate(plan, kept).total - evaluate(plan, { k, orders }).total;
         const before = routeIndex(kept.orders);
         const after = routeIndex(orders);
         const moves = before.filter((r0, i) => i && r0 !== after[i]).length;
         if (saves >= 1 && moves) plan.fresh = { k, orders, saves, moves };
+      }
+      // Drivers picked by hand: what letting the planner pick every driver would cost, for comparison.
+      if (plan.stops.some((s) => s.driver)) {
+        status(t('Comparing with letting the planner choose the drivers…'));
+        const free = { ...plan, stops: plan.stops.map((s) => ({ ...s, driver: '', home: homeOf(clients.find((c) => c.id === s.id), learned) })) };
+        const r = await runSolve(problemFor(free, k), { timeLimitMs: 2500, weights: { balance: BALANCE[settings.balance] ?? 0.15 } });
+        const extra = evaluate(plan, plan.options.find((o) => o.k === k)).total - evaluate(plan, { k, orders: r.routes.map((x) => x.order) }).total;
+        if (extra >= 1) plan.free = { k, extra };
       }
       // Show the number of drivers that was asked for; a cheaper count is offered, not forced.
       plan.view = k;
@@ -831,6 +878,9 @@ function renderResults() {
       ` <button class="link" data-k="${best.k}">${t('Show that plan')}</button>`;
   }
 
+  const free = plan.free?.k === view.k ? plan.free : null;
+  $('#free-hint').hidden = !free;
+  if (free) $('#free-hint').textContent = t('Your driver choices cost about {amount} more than letting the planner choose every driver.', { amount: fmtMoney(free.extra) });
   const fresh = plan.fresh?.k === view.k ? plan.fresh : null;
   $('#fresh-hint').hidden = !fresh;
   if (fresh) {
@@ -872,7 +922,7 @@ $('#fresh-hint').addEventListener('click', (e) => {
   opt.original = plan.fresh.orders.map((o) => o.slice());
   opt.edited = false;
   plan.view = opt.k;
-  plan.fresh = null;
+  plan.fresh = plan.free = null;
   suggestion = null;
   savePlan();
   renderResults();
@@ -964,6 +1014,7 @@ function driverCard(r, i, k, done) {
       if (s.priority) tags.push(`<span class="tag prio">${t('Priority · by {time}', { time: fmtTime(toMin(s.by)) })}</span>`);
       if (a.late > 0.5) tags.push(`<span class="tag bad">${t('{n} min late', { n: Math.round(a.late) })}</span>`);
       if (s.added) tags.push(`<span class="tag new">${t('Added')}</span>`);
+      if (s.driver) tags.push(`<span class="tag" title="${esc(t('Given to this driver by hand'))}">📌</span>`);
       if (done[s.id]) tags.push(`<span class="tag done">✓ ${t('Done {time}', { time: fmtTime(minuteOfDay(done[s.id])) })}</span>`);
       const notes = [t('Unload {n} min', { n: s.unload }), s.notes, s.today].filter(Boolean).map(esc).join(' · ');
       return `<li><span class="num">${n + 1}</span><span class="time">${fmtTime(a.arrive)}</span>
@@ -1052,7 +1103,7 @@ $('#driver-cards').addEventListener('change', (e) => {
 
 function afterEdit(opt) {
   opt.edited = true;
-  plan.fresh = null;
+  plan.fresh = plan.free = null;
   savePlan();
   renderResults();
 }
@@ -1067,12 +1118,41 @@ function moveStop(r, n, dir) {
 }
 
 // Hand a stop to another driver, at the cheapest spot in their route.
+// Hand a stop to another driver, at the cheapest spot in their route. It stays with that driver
+// when routes are built again (shown as chosen in the stop list's Driver column).
 function giveStop(r, n, to) {
   const opt = viewOption();
   const [stop] = opt.orders[r].splice(n, 1);
+  const s = plan.stops[stop - 1];
+  s.driver = driverName(to);
+  if (day.selected[s.id]) {
+    day.selected[s.id].driver = s.driver;
+    saveDay();
+  }
   const only = opt.orders.map((_, j) => (j === to ? 0 : Infinity));
   opt.orders = insertStop(opt.orders, problemFor(plan, opt.k), stop, only);
   afterEdit(opt);
+}
+
+// A driver picked for a stop that's already on the routes: move it onto their truck now
+// (cheapest spot); "Auto" just lets the planner move it next time.
+function updatePlannedDriver(id) {
+  const idx = plan ? plan.stops.findIndex((s) => s.id === id) + 1 : 0;
+  const c = clients.find((x) => x.id === id);
+  if (!idx || !c) return renderStops();
+  const name = assignedDriver(c, day.selected[id]);
+  plan.stops[idx - 1].driver = name;
+  for (const opt of plan.options) {
+    const to = settings.drivers.indexOf(name);
+    if (!name || to < 0 || to >= opt.k || opt.orders[to].includes(idx)) continue;
+    const orders = opt.orders.map((o) => o.filter((x) => x !== idx));
+    opt.orders = insertStop(orders, problemFor(plan, opt.k), idx, orders.map((_, j) => (j === to ? 0 : Infinity)));
+  }
+  plan.fresh = plan.free = null;
+  suggestion = null;
+  savePlan();
+  renderResults();
+  if (name) liveMsg(`✓ ${t('{name} → {driver}. It shows on their phone as new.', { name: esc(c.name), driver: `<b>${esc(name)}</b>` })}`);
 }
 
 // ---------- Orders after the routes went out ----------
@@ -1103,7 +1183,7 @@ function dropStop(p, idx) {
   p.stops.splice(idx - 1, 1);
   for (const [key, v] of Object.entries(p.problem)) p.problem[key] = Array.isArray(v[0]) ? keep(v).map(keep) : keep(v);
   const fix = (orders) => orders.map((o) => o.filter((x) => x !== idx).map((x) => (x > idx ? x - 1 : x)));
-  p.fresh = null;
+  p.fresh = p.free = null;
   for (const opt of p.options) {
     opt.orders = fix(opt.orders);
     opt.original = fix(opt.original);
@@ -1138,7 +1218,7 @@ function addToPlan(id) {
       const minPos = ev.routes.map((r) => r.stops.filter((s) => s.arrive <= nowMin).length);
       opt.orders = insertStop(opt.orders, p, idx, minPos);
     }
-    plan.fresh = null;
+    plan.fresh = plan.free = null;
     suggestion = null;
     savePlan();
     renderResults();
@@ -1365,7 +1445,7 @@ async function setFinalOrder(btn) {
       if (moves.length && saves >= Math.max(0.5, num(settings.keepWithDriver, 10))) suggestion = { k: view.k, orders, saves, moves };
     }
     plan.final = Date.now();
-    plan.fresh = null;
+    plan.fresh = plan.free = null;
     savePlan();
     renderResults();
   });
@@ -1541,7 +1621,7 @@ function renderClients() {
       <td class="name">${esc(c.name)}</td>
       <td class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</td>
       <td class="small"${label('Days')}>${esc(daysText(c.days))}</td>
-      <td class="small"${label('Usual driver')}>${c.homeDriver ? esc(c.homeDriver) : learned.has(c.id) ? `${esc(learned.get(c.id))} <span class="muted">${learning ? t('(learning)') : t('(auto)')}</span>` : '—'}</td>
+      <td class="small"${label('Usual driver')}>${c.homeDriver ? (c.fixedDriver ? '📌 ' : '') + esc(c.homeDriver) : learned.has(c.id) ? `${esc(learned.get(c.id))} <span class="muted">${learning ? t('(learning)') : t('(auto)')}</span>` : '—'}</td>
       <td class="small"${label('Unload')}>${num(c.unload, settings.defaultUnload)} min</td>
       <td class="small"${label('Hours')}>${hoursText(c)}${Object.keys(c.dayHours || {}).sort().map((w) => `<div class="muted">${DAYS[w]} ${hoursText(hoursOn(c, w))}</div>`).join('')}</td>
       <td class="small"${label('Notes')}>${esc(c.notes || '')}</td>
@@ -1716,6 +1796,7 @@ function openClient(c) {
     [...new Set([...settings.drivers.slice(0, MAX_DRIVERS), v.homeDriver].filter(Boolean))].map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
   for (const f of ['name', 'address', 'lat', 'lng', 'unload', 'open', 'close', 'notes', 'homeDriver', 'qbName']) cform.elements[f].value = v[f] ?? '';
   cform.querySelectorAll('[data-day]').forEach((cb) => (cb.checked = !!v.days?.[cb.dataset.day]));
+  cform.elements.fixedDriver.checked = !!v.fixedDriver;
   cform.querySelectorAll('[data-hours-day]').forEach((input) => (input.value = v.dayHours?.[input.dataset.hoursDay]?.[input.dataset.side] || ''));
   $('#day-hours').open = Object.keys(v.dayHours || {}).length > 0;
   $('#client-locate-msg').textContent = '';
@@ -1776,6 +1857,7 @@ cform.addEventListener('submit', async (e) => {
     close: el.close.value,
     notes: el.notes.value.trim(),
     homeDriver: el.homeDriver.value,
+    fixedDriver: el.fixedDriver.checked && !!el.homeDriver.value,
     qbName: el.qbName.value.trim(),
     days: [...cform.querySelectorAll('[data-day]')].map((cb) => cb.checked),
     dayHours: {},

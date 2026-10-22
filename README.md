@@ -195,7 +195,9 @@ If the test says **QBXMLRP2 is missing**, the QuickBooks connector isn't install
 2. Check or uncheck stops to match today's orders. Tick **Priority** for urgent stops and set **Deliver by**. Add a note for today if needed.
 3. Choose the number of drivers. Check their names and **hours worked this week** (filled in from History; type over it if it's wrong). Click **Build routes**.
 4. In **Compare driver counts**, see labor (with overtime), fuel and total for one driver fewer, the number you asked for, and one more. You see the plan for the number of drivers you picked. The cheapest workable plan is marked **Best**; click its row (or **Show that plan**) to switch to it.
-5. Adjust if needed: ▲ ▼ reorders a stop, **Move to…** gives it to another driver.
+5. Adjust if needed: ▲ ▼ reorders a stop, **Move to…** gives it to another driver (and keeps it with them if you build again).
+
+**Deciding who takes what.** The stop list has a **Driver** column. Leave it on **Auto** to let the planner choose, or pick a driver for any stop (**Fill in usual drivers** fills every empty one with the client's usual driver). **Build routes** then keeps those stops with their driver and finds the best order for each route; stops left on Auto go wherever is cheapest. The results also say what your choices cost compared with letting the planner choose every driver. Changing a stop's driver after routes are out moves it to that truck right away. For a standing rule, open the client, pick their **Usual driver** and tick **Always this driver** (📌 in the Clients list).
 6. Send each driver their **phone link** (**Copy phone link** or **Copy for text**), or **Print route sheets**.
 7. Orders keep coming in after the routes went out? Just check the stop (see below).
 8. At the end of the day, if someone came back much later or earlier than planned, fix their **Back** time in **History** so the week's hours and overtime stay right.
