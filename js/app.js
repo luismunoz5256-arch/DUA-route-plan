@@ -9,6 +9,7 @@ import { canonical } from './merge.js';
 import * as api from './api.js';
 import { renderRoute } from './routeview.js';
 import { analyzeDay, parseDuration, minuteOfDay } from './tracking.js';
+import { recordStays, learnedStop, MIN_VISITS } from './stays.js';
 import { mapIn, pin, depotPin, fit } from './maps.js';
 import { t, locale, dayNames, translatePage, langSwitch } from './i18n.js';
 import {
@@ -406,6 +407,16 @@ function evaluateAll(p) {
 
 const newSelection = () => ({ priority: false, by: settings.priorityBy, note: '' });
 
+// Minutes at a client's stop: what the trucks really take there (see stays.js), else the unload time.
+function unloadOf(c) {
+  const learned = settings.learnStops !== false && learnedStop(c);
+  return learned ? learned.minutes : num(c.unload, settings.defaultUnload);
+}
+const unloadText = (c) => {
+  const learned = settings.learnStops !== false && learnedStop(c);
+  return learned ? `<span title="${esc(t('Real stop time from the trucks ({n} visits)', { n: learned.visits }))}">${learned.minutes} min 🚚</span>` : `${num(c.unload, settings.defaultUnload)} min`;
+};
+
 // The driver who must take this stop: chosen for the day in the stop list, else the client's
 // usual driver when the client is set to "Always this driver". '' = the planner decides.
 const assignedDriver = (c, sel) => sel?.driver || (c.fixedDriver ? c.homeDriver : '') || '';
@@ -505,7 +516,7 @@ function renderStops() {
         <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ` <span class="tag good">${t('regular today')}</span>` : ''}${c.dayHours?.[weekday] ? ` <span class="tag prio">⏰ ${esc(hoursText(hoursOn(c, weekday)))}</span>` : ''}${s?.qb?.length ? ` <span class="tag invoice">🧾 ${s.qb.map((r) => '#' + esc(r)).join(' ')}</span>` : ''}${driverTag(c)}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</div></td>
         <td class="drv"${label('Driver')}>${driverPick(c, s)}</td>
         <td class="small"${label('Usual days')}>${esc(daysText(c.days))}</td>
-        <td class="small"${label('Unload')}>${num(c.unload, settings.defaultUnload)} min</td>
+        <td class="small"${label('Unload')}>${unloadText(c)}</td>
         <td class="prio"${label('Priority')}><input type="checkbox" data-f="priority" ${s?.priority ? 'checked' : ''} ${s ? '' : 'disabled'} aria-label="${t('Priority')}" /></td>
         <td class="by"${label('Deliver by')}><input type="time" data-f="by" value="${esc(s?.by || settings.priorityBy)}" ${s?.priority ? '' : 'disabled'} /></td>
         <td class="note-cell"${label('Note for today')}><input class="note" data-f="note" value="${esc(s?.note || '')}" ${s ? '' : 'disabled'} placeholder="${esc(c.notes || '')}" /></td>
@@ -660,7 +671,7 @@ function stopFromClient(c, sel, home = '') {
   const close = toMin(hours.close);
   return {
     id: c.id, name: c.name, address: c.address, lat: Number(c.lat), lng: Number(c.lng), home, driver: assignedDriver(c, sel),
-    unload: num(c.unload, settings.defaultUnload), notes: c.notes || '', today: sel.note || '',
+    unload: unloadOf(c), notes: c.notes || '', today: sel.note || '',
     priority: !!sel.priority, by: sel.priority ? sel.by || settings.priorityBy : '',
     open: toMin(hours.open), due: prio == null ? close : close == null ? prio : Math.min(prio, close),
   };
@@ -1564,11 +1575,14 @@ $('#btn-week-trucks').addEventListener('click', (e) =>
       for (let i = 0; i < 7; i++) {
         const date = addDays(historyWeek, i);
         if (date > localDate()) break;
+        const reports = [];
         for (const p of pairs) {
           const trips = (week.trucks[p.id]?.trips || []).filter((tr) => localDate(new Date(tr.start)) === date);
-          const r = trips.length ? analyzeDay({ trips, depot, radius: num(settings.geotabRadius, 200) }) : null;
+          const r = trips.length ? analyzeDay({ trips, depot, planned: plannedStops(date, p.name), radius: num(settings.geotabRadius, 200) }) : null;
+          if (r) reports.push(r);
           if (r?.back != null) returns.push([date, p.name, Math.round(minuteOfDay(r.back))]);
         }
+        learnStops(date, reports);
       }
       saveReturns(returns, 'truck');
       renderHistory();
@@ -1622,7 +1636,7 @@ function renderClients() {
       <td class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</td>
       <td class="small"${label('Days')}>${esc(daysText(c.days))}</td>
       <td class="small"${label('Usual driver')}>${c.homeDriver ? (c.fixedDriver ? '📌 ' : '') + esc(c.homeDriver) : learned.has(c.id) ? `${esc(learned.get(c.id))} <span class="muted">${learning ? t('(learning)') : t('(auto)')}</span>` : '—'}</td>
-      <td class="small"${label('Unload')}>${num(c.unload, settings.defaultUnload)} min</td>
+      <td class="small"${label('Unload')}>${unloadText(c)}</td>
       <td class="small"${label('Hours')}>${hoursText(c)}${Object.keys(c.dayHours || {}).sort().map((w) => `<div class="muted">${DAYS[w]} ${hoursText(hoursOn(c, w))}</div>`).join('')}</td>
       <td class="small"${label('Notes')}>${esc(c.notes || '')}</td>
       <td class="row small-gap actions"><button class="link" data-act="edit">${t('Edit')}</button><button class="link danger" data-act="delete">${t('Delete')}</button></td>
@@ -1797,6 +1811,14 @@ function openClient(c) {
   for (const f of ['name', 'address', 'lat', 'lng', 'unload', 'open', 'close', 'notes', 'homeDriver', 'qbName']) cform.elements[f].value = v[f] ?? '';
   cform.querySelectorAll('[data-day]').forEach((cb) => (cb.checked = !!v.days?.[cb.dataset.day]));
   cform.elements.fixedDriver.checked = !!v.fixedDriver;
+  const learnedStopTime = c && learnedStop(c);
+  const visits = Object.keys(c?.stays || {}).length;
+  $('#stop-learned').hidden = !visits;
+  $('#stop-learned').textContent = learnedStopTime
+    ? settings.learnStops !== false
+      ? t('The trucks typically stay {n} min here ({v} visits). Planning uses that instead of the unload time.', { n: learnedStopTime.minutes, v: learnedStopTime.visits })
+      : t('The trucks typically stay {n} min here ({v} visits). Turn on real stop times in Settings to plan with it.', { n: learnedStopTime.minutes, v: learnedStopTime.visits })
+    : t('{v} visit(s) recorded from the trucks. Planning starts using them after {min}.', { v: visits, min: MIN_VISITS });
   cform.querySelectorAll('[data-hours-day]').forEach((input) => (input.value = v.dayHours?.[input.dataset.hoursDay]?.[input.dataset.side] || ''));
   $('#day-hours').open = Object.keys(v.dayHours || {}).length > 0;
   $('#client-locate-msg').textContent = '';
@@ -2188,6 +2210,57 @@ function truckPairs(devices) {
     .sort((a, b) => (b.driver - a.driver) || (a.driver ? settings.drivers.indexOf(a.name) - settings.drivers.indexOf(b.name) : 0));
 }
 
+// The stops a driver's truck was supposed to make on `date`, to match against its trips.
+function plannedStops(date, name) {
+  const byId = new Map(clients.map((c) => [c.id, c]));
+  return (store.getRoutes()[date]?.drivers?.[name]?.stops || [])
+    .map((s) => {
+      const c = byId.get(s.id);
+      return c && hasLoc(c) ? { id: s.id, name: s.n, lat: Number(c.lat), lng: Number(c.lng), plannedArrive: s.t } : null;
+    })
+    .filter(Boolean);
+}
+
+// How long each truck stayed at each client it delivered to on `date` (see stays.js).
+// Visits still going on (no departure yet) don't count.
+function learnStops(date, reports) {
+  const visits = reports.flatMap((r) => r.visits.filter((v) => v.visited && v.leave != null).map((v) => ({ id: v.id, minutes: v.minutes })));
+  if (recordStays(clients, date, visits)) saveClients();
+}
+
+// When an admin opens the planner, it reads the past week's truck days it hasn't read yet:
+// real return times for payroll, and real stop times for planning.
+async function readPastTruckDays() {
+  const depot = depotPoint();
+  if (role() !== 'admin' || !depot) return;
+  const routes = store.getRoutes();
+  const dates = Array.from({ length: 7 }, (_, i) => addDays(localDate(), -1 - i)).filter((d) => routes[d] && !store.getHistory()[d]?.trucksRead);
+  if (!dates.length) return;
+  try {
+    if (!(await api.call('geotabStatus')).connected) return;
+    const pairs = truckPairs(await loadDevices());
+    for (const date of dates) {
+      const data = await api.call('geotabDay', { deviceIds: pairs.map((p) => p.id), ...localDayRange(date), trail: false });
+      const returns = [];
+      const reports = [];
+      for (const p of pairs) {
+        const trips = data.trucks[p.id]?.trips || [];
+        if (!trips.length) continue;
+        const r = analyzeDay({ trips, depot, planned: plannedStops(date, p.name), radius: num(settings.geotabRadius, 200) });
+        reports.push(r);
+        if (r.back != null) returns.push([date, p.name, Math.round(minuteOfDay(r.back))]);
+      }
+      saveReturns(returns, 'truck');
+      learnStops(date, reports);
+      const history = store.getHistory();
+      history[date] = { drivers: [], ...history[date], trucksRead: true, updated: Date.now() };
+      store.saveHistory(history);
+    }
+  } catch (err) {
+    console.error(err); // tried again next time the planner opens
+  }
+}
+
 function localDayRange(date) {
   const [y, m, d] = date.split('-').map(Number);
   return { from: new Date(y, m - 1, d).toISOString(), to: new Date(y, m - 1, d + 1).toISOString() };
@@ -2233,23 +2306,18 @@ async function renderTrucks() {
       today ? api.call('geotabLive') : Promise.resolve({ trucks: [] }),
     ]);
     const routes = store.getRoutes()[date]?.drivers || {};
-    const byId = new Map(clients.map((c) => [c.id, c]));
     const depot = depotPoint();
     const returns = [];
     const rows = pairs.map((p, i) => {
       const route = routes[p.name];
-      const planned = (route?.stops || [])
-        .map((s) => {
-          const c = byId.get(s.id);
-          return c && hasLoc(c) ? { id: s.id, name: s.n, lat: Number(c.lat), lng: Number(c.lng), plannedArrive: s.t } : null;
-        })
-        .filter(Boolean);
+      const planned = plannedStops(date, p.name);
       const truck = dayData.trucks[p.id] || { trips: [], trail: [] };
       const report = analyzeDay({ trips: truck.trips, depot, planned, radius: num(settings.geotabRadius, 200) });
       if (report.back != null) returns.push([date, p.name, Math.round(minuteOfDay(report.back))]);
       return { ...p, color: COLORS[i % COLORS.length], route, report, trail: truck.trail, live: live.trucks.find((x) => x.id === p.id) };
     });
     const changed = saveReturns(returns, 'truck');
+    learnStops(date, rows.map((r) => r.report));
     note.textContent =
       (today ? t('Live positions update every minute while this page is open. Return times feed into History automatically.') : t('Return times from the trucks are used in History (unless someone typed a time there).')) +
       (changed ? ' ' + t('History was updated with real return times.') : '');
@@ -2334,6 +2402,7 @@ $('#btn-trucks-refresh').addEventListener('click', renderTrucks);
 // Settings → Truck tracking
 async function renderGeotabSettings() {
   $('#g-radius').value = num(settings.geotabRadius, 200);
+  $('#g-learn-stops').checked = settings.learnStops !== false;
   let st;
   try {
     st = await api.call('geotabStatus');
@@ -2394,6 +2463,10 @@ $('#truck-rows').addEventListener('change', (e) => {
 
 $('#g-radius').addEventListener('change', (e) => {
   settings.geotabRadius = num(e.target.value, 200);
+  saveSettings();
+});
+$('#g-learn-stops').addEventListener('change', (e) => {
+  settings.learnStops = e.target.checked;
   saveSettings();
 });
 
@@ -2590,6 +2663,7 @@ async function enterApp(user) {
   renderPlanControls();
   loadDay(planDate);
   applyQuickBooks();
+  readPastTruckDays().then(() => currentTab() === 'clients' && renderClients());
   renderBanner();
   renderResults();
   showTab('plan');

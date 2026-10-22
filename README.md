@@ -153,6 +153,8 @@ The Geotab login is stored only on your Google Sheet server. It's never sent to 
 
 A stop counts as reached when the truck stops within 200 meters of the client's address. You can change that distance in Settings.
 
+**Real stop times.** Every time the planner reads a truck's day, it records how long the truck stayed at each client on its route. When an admin opens the planner, it also reads any of the past week's days it hasn't read yet, so this (and the real return times for payroll) happens by itself. Once a client has 3 visits, planning uses the typical stay (the middle value, so one long lunch stop doesn't throw it off) instead of the typed unload time. Stops shorter than 1 minute or longer than 90 aren't counted, and only the last 20 visits are kept. The stop list and Clients list mark these times with 🚚, and the client form says how many visits they come from. Switch it off in **Settings → Truck tracking → Plan with real stop times from the trucks**.
+
 ## 4c. Connect QuickBooks Desktop (optional, admin)
 
 When the secretary saves an invoice in QuickBooks, its client is checked in the planner for the invoice's date. If routes are already out, the stop goes onto a truck right away and shows as **New** on that driver's phone. A voided or deleted invoice takes the stop off again. When orders close, all that's left is **Set final driving order** (or **Build routes**) and **Print route sheets**.

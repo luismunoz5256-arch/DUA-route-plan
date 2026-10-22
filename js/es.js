@@ -1,6 +1,11 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "Real stop time from the trucks ({n} visits)": "Tiempo real de parada según los camiones ({n} visitas)",
+  "The trucks typically stay {n} min here ({v} visits). Planning uses that instead of the unload time.": "Los camiones suelen quedarse {n} min aquí ({v} visitas). El plan usa eso en lugar del tiempo de descarga.",
+  "The trucks typically stay {n} min here ({v} visits). Turn on real stop times in Settings to plan with it.": "Los camiones suelen quedarse {n} min aquí ({v} visitas). Active los tiempos reales de parada en Ajustes para planear con eso.",
+  "{v} visit(s) recorded from the trucks. Planning starts using them after {min}.": "{v} visita(s) registradas por los camiones. El plan empieza a usarlas después de {min}.",
+  "Plan with real stop times from the trucks (how long they actually stay at each client, after 3 visits)": "Planear con tiempos reales de parada de los camiones (cuánto se quedan de verdad en cada cliente, después de 3 visitas)",
   "Comparing with letting the planner choose the drivers…": "Comparando con dejar que el planificador elija a los choferes…",
   "Your driver choices cost about {amount} more than letting the planner choose every driver.": "Sus choferes elegidos cuestan unos {amount} más que dejar que el planificador elija a todos los choferes.",
   "{name} (always)": "{name} (siempre)",

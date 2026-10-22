@@ -57,6 +57,7 @@ export const DEFAULT_SETTINGS = {
   balance: 'low',
   trucks: {}, // driver name -> Geotab device id
   geotabRadius: 200,
+  learnStops: true, // plan with real stop times from the trucks once a client has enough visits
 };
 
 // Settings that stay on this computer only (never synced or put in backups).
