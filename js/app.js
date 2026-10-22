@@ -51,9 +51,11 @@ function driverCounts(date = planDate) {
   const merged = new Map(clients.flatMap((c) => (c.formerIds || []).map((old) => [old, c.id]))); // see mergeClient
   for (const [d, day] of Object.entries(store.getRoutes())) {
     if (d >= date || (settings.learnFrom && d < settings.learnFrom)) continue;
-    for (const [name, route] of Object.entries(day.drivers || {})) {
-      for (const s of route.stops || []) {
-        const id = merged.get(s.id) || s.id;
+    // The planner's own best plan for that day when there is one, else the routes as sent.
+    const byDriver = day.best || Object.fromEntries(Object.entries(day.drivers || {}).map(([name, route]) => [name, (route.stops || []).map((s) => s.id)]));
+    for (const [name, ids] of Object.entries(byDriver)) {
+      for (const raw of ids) {
+        const id = merged.get(raw) || raw;
         if (id) (counts[id] ||= {})[name] = (counts[id][name] || 0) + 1;
       }
     }
@@ -104,6 +106,21 @@ function sameAreaSameDriver(orders, k) {
   best.forEach((j, r) => (relabeled[j] = orders[r]));
   const before = evaluate(plan, { k, orders }).total;
   return evaluate(plan, { k, orders: relabeled }).total <= before + 2 ? relabeled : orders;
+}
+
+// The planner's own best routes for k drivers with today's stops, ignoring drivers picked by hand
+// and which truck stops are on now. Usual drivers are learned from these (see bestByDriver).
+async function bestPlanOrders(k) {
+  const learned = usualDrivers();
+  const free = { ...plan, stops: plan.stops.map((s) => ({ ...s, driver: '', home: homeOf(clients.find((c) => c.id === s.id) || {}, learned) })) };
+  const r = await runSolve(problemFor(free, k), { timeLimitMs: 2500, weights: { balance: BALANCE[settings.balance] ?? 0.15 } });
+  const orders = r.routes.map((x) => x.order);
+  return isLearning() ? sameAreaSameDriver(orders, k) : orders;
+}
+
+// { driverName: [client ids] } for a set of routes of the current plan.
+function bestByDriver(orders) {
+  return Object.fromEntries(orders.map((o, r) => [driverName(r), o.map((i) => plan.stops[i - 1].id)]).filter(([, ids]) => ids.length));
 }
 
 function fmtDateLong(date) {
@@ -498,7 +515,7 @@ function renderStops() {
     return home ? ` <span class="tag">${t('usually {name}', { name: esc(home) })}</span>` : '';
   };
   $('#learn-note').hidden = !isLearning();
-  if (isLearning()) $('#learn-note').textContent = '🎓 ' + t('Learning usual drivers until {date}: routes are planned the cheapest way each day, and each area keeps the same driver from day to day.', { date: fmtDateLong(settings.learnUntil) });
+  if (isLearning()) $('#learn-note').textContent = '🎓 ' + t("Learning usual drivers until {date}: it learns from the planner's own best plan each day, so editing routes to match what drivers loaded doesn't change what it learns.", { date: fmtDateLong(settings.learnUntil) });
   $('#live-note').hidden = !plan;
   if (plan) $('#live-note-text').textContent = t('Routes for this day are out. Checking a stop puts it on a truck right away (its usual driver when that makes sense); unchecking takes it off. Other stops never move.');
   // Who takes each checked stop: the planner ("Auto") or a driver picked here.
@@ -756,27 +773,33 @@ async function buildRoutes() {
         if (isLearning() && !old && !plan.stops.some((s) => s.driver)) orders = sameAreaSameDriver(orders, vehicles);
         plan.options.push({ k: vehicles, orders, original: orders.map((o) => o.slice()) });
       }
-      // Stops kept the trucks they were on. Also plan from scratch, and offer that if it's cheaper.
+      const kept = plan.options.find((o) => o.k === k);
+      const locked = plan.stops.some((s) => s.driver);
+      const cost = (orders) => evaluate(plan, { k, orders }).total;
+      // The planner's own best plan for the day: no drivers picked by hand, nothing kept on the truck
+      // it was on. Usual drivers are learned from it, whatever routes are actually sent (see driverCounts).
+      let best = kept.orders;
+      if (current.size || locked) {
+        status(t("Working out the planner's own best plan…"));
+        best = await bestPlanOrders(k);
+      }
+      plan.best = bestByDriver(best);
+      // Drivers picked by hand: what letting the planner pick every driver would cost, for comparison.
+      if (locked && cost(kept.orders) - cost(best) >= 1) plan.free = { k, extra: cost(kept.orders) - cost(best) };
+      // Stops kept the trucks they were on. Also plan from scratch (still with the drivers picked by
+      // hand), and offer that if it's cheaper.
       if (current.size) {
-        status(t('Comparing with planning from scratch…'));
-        const scratch = { ...plan, stops: plan.stops.map((s) => ({ ...s, home: homeOf(clients.find((c) => c.id === s.id), learned) })) };
-        const r = await runSolve(problemFor(scratch, k), { timeLimitMs: 2500, weights: { balance: BALANCE[settings.balance] ?? 0.15 } });
-        let orders = r.routes.map((x) => x.order);
-        if (isLearning() && !plan.stops.some((s) => s.driver)) orders = sameAreaSameDriver(orders, k);
-        const kept = plan.options.find((o) => o.k === k);
-        const saves = evaluate(plan, kept).total - evaluate(plan, { k, orders }).total;
+        let orders = best;
+        if (locked) {
+          status(t('Comparing with planning from scratch…'));
+          const scratch = { ...plan, stops: plan.stops.map((s) => ({ ...s, home: homeOf(clients.find((c) => c.id === s.id) || {}, learned) })) };
+          orders = (await runSolve(problemFor(scratch, k), { timeLimitMs: 2500, weights: { balance: BALANCE[settings.balance] ?? 0.15 } })).routes.map((x) => x.order);
+        }
+        const saves = cost(kept.orders) - cost(orders);
         const before = routeIndex(kept.orders);
         const after = routeIndex(orders);
         const moves = before.filter((r0, i) => i && r0 !== after[i]).length;
         if (saves >= 1 && moves) plan.fresh = { k, orders, saves, moves };
-      }
-      // Drivers picked by hand: what letting the planner pick every driver would cost, for comparison.
-      if (plan.stops.some((s) => s.driver)) {
-        status(t('Comparing with letting the planner choose the drivers…'));
-        const free = { ...plan, stops: plan.stops.map((s) => ({ ...s, driver: '', home: homeOf(clients.find((c) => c.id === s.id), learned) })) };
-        const r = await runSolve(problemFor(free, k), { timeLimitMs: 2500, weights: { balance: BALANCE[settings.balance] ?? 0.15 } });
-        const extra = evaluate(plan, plan.options.find((o) => o.k === k)).total - evaluate(plan, { k, orders: r.routes.map((x) => x.order) }).total;
-        if (extra >= 1) plan.free = { k, extra };
       }
       // Show the number of drivers that was asked for; a cheaper count is offered, not forced.
       plan.view = k;
@@ -803,7 +826,7 @@ function savePlan() {
   ev.routes.forEach((r, i) => {
     if (r.order.length) routes[driverName(i)] = routePayload(r, i);
   });
-  store.saveRoutesDay(plan.date, routes);
+  store.saveRoutesDay(plan.date, routes, plan.best);
   // Real return times (from the truck or typed in History) are kept when the plan changes.
   const before = store.getHistory()[plan.date]?.drivers || [];
   const drivers = ev.routes
@@ -1455,6 +1478,8 @@ async function setFinalOrder(btn) {
       }
       if (moves.length && saves >= Math.max(0.5, num(settings.keepWithDriver, 10))) suggestion = { k: view.k, orders, saves, moves };
     }
+    // Orders are in now: the planner's own best plan for the whole day, to learn usual drivers from.
+    plan.best = bestByDriver(await bestPlanOrders(view.k));
     plan.final = Date.now();
     plan.fresh = plan.free = null;
     savePlan();

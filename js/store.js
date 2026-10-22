@@ -178,9 +178,11 @@ export function deleteHistoryDay(date) {
 export function getRoutes() {
   return read('routes', {});
 }
-export function saveRoutesDay(date, drivers) {
+// best = { driverName: [client ids] }: the planner's own best plan that day, to learn usual drivers
+// from (drivers never receive it).
+export function saveRoutesDay(date, drivers, best) {
   const all = getRoutes();
-  all[date] = { updated: Date.now(), drivers };
+  all[date] = { updated: Date.now(), drivers, ...(best ? { best } : {}) };
   // keep the last 30 days
   for (const d of Object.keys(all).sort().slice(0, -30)) delete all[d];
   write('routes', all);
