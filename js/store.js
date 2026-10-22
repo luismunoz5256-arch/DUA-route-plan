@@ -139,8 +139,10 @@ export function getPlans() {
   if (old?.problem && !plans[old.date]) plans[old.date] = old;
   return plans;
 }
+// A day whose stops were all taken off keeps { date, deleted: true }, so the deletion syncs too.
 export function getPlan(date) {
-  return getPlans()[date] || null;
+  const plan = getPlans()[date];
+  return plan && !plan.deleted ? plan : null;
 }
 export function savePlan(plan) {
   plan.updated = Date.now();

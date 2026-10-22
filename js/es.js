@@ -1,6 +1,9 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "Comparing with planning from scratch…": "Comparando con planear desde cero…",
+  "Stops stayed on the trucks they were already on. Planning from scratch would cost {amount} less, but {n} stop(s) would change trucks.": "Las paradas se quedaron en los camiones donde ya estaban. Planear desde cero costaría {amount} menos, pero {n} parada(s) cambiarían de camión.",
+  "Use the plan from scratch": "Usar el plan desde cero",
   "A new version of the app is ready.": "Hay una nueva versión de la aplicación.",
   "Reload": "Recargar",
   "Earliest delivery": "Entrega desde",

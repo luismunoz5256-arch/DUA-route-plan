@@ -706,6 +706,20 @@ async function buildRoutes() {
         if (isLearning() && !old) orders = sameAreaSameDriver(orders, vehicles);
         plan.options.push({ k: vehicles, orders, original: orders.map((o) => o.slice()) });
       }
+      // Stops kept the trucks they were on. Also plan from scratch, and offer that if it's cheaper.
+      if (current.size) {
+        status(t('Comparing with planning from scratch…'));
+        const scratch = { ...plan, stops: plan.stops.map((s) => ({ ...s, home: homeOf(clients.find((c) => c.id === s.id), learned) })) };
+        const r = await runSolve(problemFor(scratch, k), { timeLimitMs: 2500, weights: { balance: BALANCE[settings.balance] ?? 0.15 } });
+        let orders = r.routes.map((x) => x.order);
+        if (isLearning()) orders = sameAreaSameDriver(orders, k);
+        const kept = plan.options.find((o) => o.k === k);
+        const saves = evaluate(plan, kept).total - evaluate(plan, { k, orders }).total;
+        const before = routeIndex(kept.orders);
+        const after = routeIndex(orders);
+        const moves = before.filter((r0, i) => i && r0 !== after[i]).length;
+        if (saves >= 1 && moves) plan.fresh = { k, orders, saves, moves };
+      }
       // Show the number of drivers that was asked for; a cheaper count is offered, not forced.
       plan.view = k;
       // What the drivers were first told stays the yardstick for "new" and "taken off" on their phones.
@@ -817,6 +831,14 @@ function renderResults() {
       ` <button class="link" data-k="${best.k}">${t('Show that plan')}</button>`;
   }
 
+  const fresh = plan.fresh?.k === view.k ? plan.fresh : null;
+  $('#fresh-hint').hidden = !fresh;
+  if (fresh) {
+    $('#fresh-hint').innerHTML =
+      t('Stops stayed on the trucks they were already on. Planning from scratch would cost {amount} less, but {n} stop(s) would change trucks.', { amount: fmtMoney(fresh.saves), n: fresh.moves }) +
+      ` <button class="link" id="btn-use-fresh">${t('Use the plan from scratch')}</button>`;
+  }
+
   const src = plan.source;
   $('#data-note').innerHTML = src.estimated
     ? `<span class="warn-text">⚠ ${t('{n} of {total} drive times are rough straight-line estimates. Times may be off.', { n: src.estimated, total: src.google + src.estimated })}</span>`
@@ -843,6 +865,18 @@ function viewDrivers(e) {
 }
 $('#compare-rows').addEventListener('click', viewDrivers);
 $('#best-hint').addEventListener('click', viewDrivers);
+$('#fresh-hint').addEventListener('click', (e) => {
+  if (!e.target.closest('#btn-use-fresh') || !plan.fresh) return;
+  const opt = plan.options.find((o) => o.k === plan.fresh.k);
+  opt.orders = plan.fresh.orders.map((o) => o.slice());
+  opt.original = plan.fresh.orders.map((o) => o.slice());
+  opt.edited = false;
+  plan.view = opt.k;
+  plan.fresh = null;
+  suggestion = null;
+  savePlan();
+  renderResults();
+});
 
 $('#btn-reset-edits').addEventListener('click', () => {
   const opt = viewOption();
@@ -1018,6 +1052,7 @@ $('#driver-cards').addEventListener('change', (e) => {
 
 function afterEdit(opt) {
   opt.edited = true;
+  plan.fresh = null;
   savePlan();
   renderResults();
 }
@@ -1068,6 +1103,7 @@ function dropStop(p, idx) {
   p.stops.splice(idx - 1, 1);
   for (const [key, v] of Object.entries(p.problem)) p.problem[key] = Array.isArray(v[0]) ? keep(v).map(keep) : keep(v);
   const fix = (orders) => orders.map((o) => o.filter((x) => x !== idx).map((x) => (x > idx ? x - 1 : x)));
+  p.fresh = null;
   for (const opt of p.options) {
     opt.orders = fix(opt.orders);
     opt.original = fix(opt.original);
@@ -1102,6 +1138,7 @@ function addToPlan(id) {
       const minPos = ev.routes.map((r) => r.stops.filter((s) => s.arrive <= nowMin).length);
       opt.orders = insertStop(opt.orders, p, idx, minPos);
     }
+    plan.fresh = null;
     suggestion = null;
     savePlan();
     renderResults();
@@ -1118,10 +1155,22 @@ function removeFromPlan(id) {
     const r = viewOption().orders.findIndex((o) => o.includes(idx));
     dropStop(plan, idx);
     suggestion = null;
+    if (!plan.stops.length) return clearPlan();
     savePlan();
     renderResults();
     liveMsg(t('{name} taken off {driver}\'s route. Their phone says not to deliver it.', { name: esc(name), driver: `<b>${esc(driverName(r))}</b>` }));
   });
+}
+
+// Every stop came off: the day has no routes any more, so checking stops again just picks them,
+// and the next Build routes plans the whole day from scratch.
+function clearPlan() {
+  store.savePlan({ date: plan.date, deleted: true });
+  store.saveRoutesDay(plan.date, {});
+  plan = null;
+  suggestion = null;
+  renderResults();
+  liveMsg('');
 }
 
 // Priority, deliver-by time and today's note follow the stop onto its route.
@@ -1316,6 +1365,7 @@ async function setFinalOrder(btn) {
       if (moves.length && saves >= Math.max(0.5, num(settings.keepWithDriver, 10))) suggestion = { k: view.k, orders, saves, moves };
     }
     plan.final = Date.now();
+    plan.fresh = null;
     savePlan();
     renderResults();
   });
@@ -1633,6 +1683,7 @@ function mergeClient(dupId, keepId) {
   }
   if (day && mergeSelection(day, dupId, keepId)) saveDay();
   for (const saved of Object.values(store.getPlans())) {
+    if (saved.deleted) continue;
     const p = saved.date === plan?.date ? plan : saved;
     if (!mergeInPlan(p, dupId, keep)) continue;
     if (p === plan) savePlan();
