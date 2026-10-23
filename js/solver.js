@@ -15,6 +15,8 @@
 //   home[i]      usual driver (route index) of stop i, or null; optional
 //   away         cost (minutes of pay) of giving a stop to someone other than its usual driver
 //   lock[i]      route index stop i must stay on (already loaded on that truck), or null; optional
+//   px[i], py[i] map position of each place in km (for route compactness); optional
+//   compact      minutes of pay per km of route spread: keeps each driver in one part of town; optional
 //
 // Objective, in minutes of regular pay (lower is better):
 //   sum over drivers used: (back - shiftStart) + 0.5 x overtime minutes + fuel
@@ -22,6 +24,7 @@
 //   + balance weight x (latest finish - earliest finish)
 //   + penalty for a driver with no stops
 //   + away x stops not with their usual driver (so regulars keep their driver unless moving saves more)
+//   + compact x spread of each route (how far its stops are from the route's middle, see routeEval)
 //
 // Search: ruin-and-recreate (remove a few stops, re-insert them at the cheapest
 // spots) with simulated-annealing acceptance, then a 2-opt polish.
@@ -107,10 +110,19 @@ function routeEval(route, p, w, ins, pos, out, r) {
   let late = 0;
   let dist = 0;
   let off = 0;
+  let sx = 0;
+  let sy = 0;
+  let ss = 0;
+  const shape = p.compact && p.px;
   for (let k = 0, x = 0; k < len; k++) {
     let i;
     if (ins >= 0 && k === pos) i = ins;
     else i = route[x++];
+    if (shape) {
+      sx += p.px[i];
+      sy += p.py[i];
+      ss += p.px[i] * p.px[i] + p.py[i] * p.py[i];
+    }
     if (p.lock && p.lock[i] != null && p.lock[i] !== r) off += LOCKED;
     else if (p.home && p.home[i] != null && p.home[i] !== r) off += p.away || 0;
     t += p.time[prev][i];
@@ -128,7 +140,9 @@ function routeEval(route, p, w, ins, pos, out, r) {
   const otAt = otAtOf(p, r);
   const paid = t - shiftStartOf(p);
   const ot = t > otAt ? Math.min(paid, t - otAt) : 0;
-  out.cost = paid + 0.5 * ot + (p.fuelPerMile || 0) * dist + w.late * late + w.pastEnd * pastEnd + off;
+  // Spread: sqrt(stops x sum of squared km from the route's middle), about stops x typical distance.
+  const spread = shape ? Math.sqrt(Math.max(0, ss - (sx * sx + sy * sy) / len) * len) : 0;
+  out.cost = paid + 0.5 * ot + (p.fuelPerMile || 0) * dist + w.late * late + w.pastEnd * pastEnd + off + (shape ? p.compact * spread : 0);
   out.finish = t;
   return out;
 }

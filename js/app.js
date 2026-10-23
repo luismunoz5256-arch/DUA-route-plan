@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { geocode } from './google.js';
+import { geocode, roadPath } from './google.js';
 import { missingPlan, fillMissing, assemble, nextTrafficDeparture } from './matrix.js';
 import { solve, summarize, insertStop, costOf } from './solver.js';
 import { overtimeStart, laborCost, minutesBefore, weekSummary, recordReturn } from './pay.js';
@@ -20,6 +20,8 @@ import {
 const $ = (sel) => document.querySelector(sel);
 const COLORS = ['#1f6fb4', '#c4302b', '#2a9a3d', '#8a4fbf', '#e07b12', '#138d9c', '#8c564b', '#d0459b'];
 const BALANCE = { low: 0.15, medium: 0.6, high: 2 };
+// Minutes of pay per km of route spread (see solver.js): how hard to keep each driver in one area.
+const AREA = { off: 0, some: 0.5, strong: 1.5 };
 const MAX_DRIVERS = 8;
 const DAYS = dayNames();
 const ROLE_LABEL = { admin: t('Admin'), secretary: t('Secretary'), driver: t('Driver') };
@@ -379,6 +381,10 @@ function problemFor(p, k) {
     away: perMinute ? num(settings.keepWithDriver, 10) / perMinute : 0,
     // Stops given to a driver by hand never go to another truck.
     lock: [null, ...p.stops.map((s) => (s.driver ? index(s.driver) : null))],
+    // Map position in km from the warehouse, so routes can be kept compact.
+    px: [0, ...p.stops.map((s) => (s.lng - p.depot.lng) * 111.32 * Math.cos((p.depot.lat * Math.PI) / 180))],
+    py: [0, ...p.stops.map((s) => (s.lat - p.depot.lat) * 110.57)],
+    compact: AREA[settings.routeArea] ?? AREA.some,
   };
 }
 
@@ -473,6 +479,7 @@ function renderPlanControls() {
   $('#plan-drivers').innerHTML = Array.from({ length: MAX_DRIVERS }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
   $('#plan-drivers').value = settings.driverCount;
   $('#plan-balance').value = settings.balance;
+  $('#plan-area').value = settings.routeArea;
 }
 
 // Column name shown beside a table cell when phones stack table rows into cards (see style.css).
@@ -507,6 +514,7 @@ function renderStops() {
   $('#no-clients').hidden = clients.length > 0;
   const learned = usualDrivers();
   const assigned = assignedDrivers(plan);
+  const spots = clientSpots();
   // On a route: that driver, in the route's colour. Otherwise: who usually takes them.
   const driverTag = (c) => {
     const on = assigned.get(c.id);
@@ -530,7 +538,7 @@ function renderStops() {
       const s = day.selected[c.id];
       return `<tr data-id="${esc(c.id)}" class="${s ? 'selected' : ''}">
         <td class="pick"><input type="checkbox" data-f="on" ${s ? 'checked' : ''} aria-label="${esc(c.name)}" /></td>
-        <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ` <span class="tag good">${t('regular today')}</span>` : ''}${c.dayHours?.[weekday] ? ` <span class="tag prio">⏰ ${esc(hoursText(hoursOn(c, weekday)))}</span>` : ''}${s?.qb?.length ? ` <span class="tag invoice">🧾 ${s.qb.map((r) => '#' + esc(r)).join(' ')}</span>` : ''}${driverTag(c)}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</div></td>
+        <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ` <span class="tag good">${t('regular today')}</span>` : ''}${c.dayHours?.[weekday] ? ` <span class="tag prio">⏰ ${esc(hoursText(hoursOn(c, weekday)))}</span>` : ''}${s?.qb?.length ? ` <span class="tag invoice">🧾 ${s.qb.map((r) => '#' + esc(r)).join(' ')}</span>` : ''}${driverTag(c)}${locationTag(c, spots)}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</div></td>
         <td class="drv"${label('Driver')}>${driverPick(c, s)}</td>
         <td class="small"${label('Usual days')}>${esc(daysText(c.days))}</td>
         <td class="small"${label('Unload')}>${unloadText(c)}</td>
@@ -624,6 +632,10 @@ $('#plan-drivers').addEventListener('change', (e) => {
 });
 $('#plan-balance').addEventListener('change', (e) => {
   settings.balance = e.target.value;
+  saveSettings();
+});
+$('#plan-area').addEventListener('change', (e) => {
+  settings.routeArea = e.target.value;
   saveSettings();
 });
 $('#driver-rows').addEventListener('change', (e) => {
@@ -924,9 +936,19 @@ function renderResults() {
   }
 
   const src = plan.source;
-  $('#data-note').innerHTML = src.estimated
-    ? `<span class="warn-text">⚠ ${t('{n} of {total} drive times are rough straight-line estimates. Times may be off.', { n: src.estimated, total: src.google + src.estimated })}</span>`
-    : t('Drive times from Google with typical traffic around {time}.', { time: fmtTime(toMin(src.trafficTime)) });
+  // Deadlines no driver could meet even going there first: the deadline is the problem, not the plan.
+  const impossible = plan.stops
+    .map((s, k) => {
+      const due = plan.problem.due[k + 1];
+      const earliest = Math.max(plan.start + plan.problem.time[0][k + 1], plan.problem.open[k + 1] ?? 0);
+      return due != null && earliest > due + 0.5 ? t('{name} (deliver by {by}, earliest {at})', { name: s.name, by: fmtTime(due), at: fmtTime(earliest) }) : null;
+    })
+    .filter(Boolean);
+  $('#data-note').innerHTML =
+    (src.estimated
+      ? `<span class="warn-text">⚠ ${t('{n} of {total} drive times are rough straight-line estimates. Times may be off.', { n: src.estimated, total: src.google + src.estimated })}</span>`
+      : t('Drive times from Google with typical traffic around {time}.', { time: fmtTime(toMin(src.trafficTime)) })) +
+    (impossible.length ? `<br><span class="warn-text">⚠ ${esc(t("Can't be on time even as a driver's first stop: {list}. Change the deliver-by time, or leave the warehouse earlier.", { list: impossible.join(', ') }))}</span>` : '');
 
   const ev = viewEv;
   $('#plan-title').textContent = `${fmtDateLong(plan.date)} · ${plural(view.k, '1 driver', '{n} drivers')} · ${fmtMoney(ev.total)}`;
@@ -1520,9 +1542,30 @@ function renderRouteMap(ev) {
       pin(layer, ll, `<div class="pin" style="background:${color}">${n + 1}</div>`, 26, `<b>${esc(s.name)}</b><br>${esc(driverName(i))} · ${t('stop {n}', { n: n + 1 })}<br>${fmtTime(r.stops[n].arrive)}`);
     });
     line.push(d);
-    if (r.order.length) L.polyline(line, { color, weight: 4, opacity: 0.75 }).addTo(layer);
+    if (!r.order.length) return;
+    // Straight lines first; the real roads replace them when Google has them (see drawRoads).
+    const known = store.getPaths()[pathKey(line)];
+    const poly = L.polyline(known || line, { color, weight: 4, opacity: 0.75, dashArray: known || !settings.apiKey ? null : '6 8' }).addTo(layer);
+    if (!known && settings.apiKey) drawRoad(poly, line);
   });
   fit(routeMap, pts);
+}
+
+const pathKey = (line) => line.map(([lat, lng]) => `${lat.toFixed(5)},${lng.toFixed(5)}`).join('|');
+
+// Asks Google for the roads a route takes (once per route, then saved in this browser) and
+// draws them in place of the straight lines. Stays with straight lines if that fails.
+async function drawRoad(poly, line) {
+  if (store.getUsage().paths >= num(settings.monthlyPathLimit, 1500)) return poly.setStyle({ dashArray: null });
+  try {
+    store.addUsage('paths', 1);
+    const path = await roadPath(settings.apiKey, line.map(([lat, lng]) => ({ lat, lng })));
+    store.savePath(pathKey(line), path);
+    poly.setLatLngs(path);
+  } catch (err) {
+    console.warn(err);
+  }
+  poly.setStyle({ dashArray: null });
 }
 
 // ---------- History tab ----------
@@ -1651,6 +1694,7 @@ function renderClients() {
   const q = $('#client-search').value.trim().toLowerCase();
   const learned = usualDrivers(localDate());
   const learning = isLearning(localDate());
+  const spots = clientSpots();
   renderDuplicates();
   const list = clients.filter((c) => !q || c.name.toLowerCase().includes(q) || (c.address || '').toLowerCase().includes(q)).sort(byName);
   $('#client-count').textContent = `(${clients.length})`;
@@ -1658,7 +1702,7 @@ function renderClients() {
     .map(
       (c) => `<tr data-id="${esc(c.id)}">
       <td class="name">${esc(c.name)}</td>
-      <td class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</td>
+      <td class="addr">${esc(c.address)}${hasLoc(c) ? locationNote(c, spots) : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</td>
       <td class="small"${label('Days')}>${esc(daysText(c.days))}</td>
       <td class="small"${label('Usual driver')}>${c.homeDriver ? (c.fixedDriver ? '📌 ' : '') + esc(c.homeDriver) : learned.has(c.id) ? `${esc(learned.get(c.id))} <span class="muted">${learning ? t('(learning)') : t('(auto)')}</span>` : '—'}</td>
       <td class="small"${label('Unload')}>${unloadText(c)}</td>
@@ -1683,6 +1727,41 @@ $('#client-rows').addEventListener('click', (e) => {
     renderClients();
   }
 });
+
+// ---------- Map spots that look wrong ----------
+// A client put in the wrong place sends a driver out of their way, so suspicious spots are flagged.
+
+const EL_PASO_MIDDLE = { lat: 31.7619, lng: -106.485 }; // where Google puts "El Paso, TX" when it can't find the street
+const spotKey = (c) => `${Number(c.lat).toFixed(4)},${Number(c.lng).toFixed(4)}`;
+
+// Clients by map spot (about 10 m), to find different addresses that ended up in the same place.
+function clientSpots() {
+  const spots = new Map();
+  for (const c of clients) if (hasLoc(c)) spots.set(spotKey(c), [...(spots.get(spotKey(c)) || []), c]);
+  return spots;
+}
+
+// Why a client's map spot looks wrong, or ''.
+function locationProblem(c, spots) {
+  if (!hasLoc(c)) return '';
+  const here = { lat: Number(c.lat), lng: Number(c.lng) };
+  const depot = depotPoint();
+  if (depot && kmApart(here, depot) > 40) return t('more than 40 km from the warehouse');
+  if (kmApart(here, EL_PASO_MIDDLE) < 0.05) return t('placed in the middle of El Paso: the street was probably not found');
+  const twin = (spots.get(spotKey(c)) || []).find((x) => x !== c && streetKey(x.address) !== streetKey(c.address));
+  if (twin) return t('same spot as {name}, with a different address', { name: twin.name });
+  return '';
+}
+
+// Short tag for the stop list (the reason shows when pointing at it), full reason for the Clients list.
+const locationTag = (c, spots) => {
+  const why = locationProblem(c, spots);
+  return why ? ` <span class="tag warn" title="${esc(why)}">⚠ ${t('check location')}</span>` : '';
+};
+const locationNote = (c, spots) => {
+  const why = locationProblem(c, spots);
+  return why ? `<div class="warn-text small">⚠ ${t('Check the location')}: ${esc(why)}</div>` : '';
+};
 
 // ---------- Duplicate clients (QuickBooks names that didn't match) ----------
 

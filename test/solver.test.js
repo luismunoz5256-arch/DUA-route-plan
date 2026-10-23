@@ -185,3 +185,24 @@ test('insertStop prefers the usual driver of a new order', () => {
   const out = insertStop([[1, 2, 3], [4, 5]], { ...p, home, away: 1000 }, 6);
   assert.ok(out[1].includes(6));
 });
+
+test('keeping drivers in their own area breaks ties in favour of compact routes', () => {
+  // Every trip goes through the warehouse, so any split costs the same: only the area goal decides.
+  const xy = [[0, 0], [10, 0], [9, 2], [10, -2], [-10, 0], [-9, 2], [-10, -2]];
+  const leg = 15;
+  const time = xy.map((a, i) => xy.map((b, j) => (i === j ? 0 : (i ? leg : 0) + (j ? leg : 0))));
+  const p = { time, service: xy.map((_, i) => (i ? 10 : 0)), open: xy.map(() => null), due: xy.map(() => null), start: 690, endBy: 1200, vehicles: 2, px: xy.map((q) => q[0]), py: xy.map((q) => q[1]), compact: 0.5 };
+  for (const seed of [1, 2, 3]) {
+    const r = solve(p, { timeLimitMs: 200, seed });
+    for (const x of r.routes) assert.equal(new Set(x.order.map((i) => Math.sign(xy[i][0]))).size, 1, `seed ${seed}: a route crosses town`);
+  }
+});
+
+test('the area goal costs little on an ordinary day', () => {
+  const p = makeProblem({ n: 30, vehicles: 3, seed: 4 });
+  const rng = makeRng(9);
+  const pts = p.time.map(() => [(rng() - 0.5) * 40, (rng() - 0.5) * 40]);
+  const plain = solve(p, { timeLimitMs: 400 });
+  const compact = solve({ ...p, px: pts.map((q) => q[0]), py: pts.map((q) => q[1]), compact: 0.5 }, { timeLimitMs: 400 });
+  assert.ok(compact.totalMinutes <= plain.totalMinutes * 1.05, `${compact.totalMinutes} vs ${plain.totalMinutes}`);
+});

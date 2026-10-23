@@ -1,6 +1,20 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "{name} (deliver by {by}, earliest {at})": "{name} (entregar antes de {by}, lo más pronto {at})",
+  "Can't be on time even as a driver's first stop: {list}. Change the deliver-by time, or leave the warehouse earlier.": "No pueden llegar a tiempo aunque sean la primera parada de un chofer: {list}. Cambie la hora límite o salgan antes de la bodega.",
+  "more than 40 km from the warehouse": "a más de 40 km de la bodega",
+  "placed in the middle of El Paso: the street was probably not found": "ubicado en el centro de El Paso: probablemente no se encontró la calle",
+  "same spot as {name}, with a different address": "mismo lugar que {name}, con otra dirección",
+  "check location": "revisar ubicación",
+  "Check the location": "Revise la ubicación",
+  "Google route drawing error {code}": "Error de Google al dibujar la ruta {code}",
+  "Google found no road route.": "Google no encontró una ruta por carretera.",
+  "Keep drivers in their own area": "Mantener a cada chofer en su zona",
+  "Off (cheapest)": "No (más barato)",
+  "Some": "Algo",
+  "Strong": "Mucho",
+  "Prefer plans where each driver stays in one part of town, even if they cost a little more.": "Preferir planes donde cada chofer se queda en una parte de la ciudad, aunque cuesten un poco más.",
   "Real stop time from the trucks ({n} visits)": "Tiempo real de parada según los camiones ({n} visitas)",
   "The trucks typically stay {n} min here ({v} visits). Planning uses that instead of the unload time.": "Los camiones suelen quedarse {n} min aquí ({v} visitas). El plan usa eso en lugar del tiempo de descarga.",
   "The trucks typically stay {n} min here ({v} visits). Turn on real stop times in Settings to plan with it.": "Los camiones suelen quedarse {n} min aquí ({v} visitas). Active los tiempos reales de parada en Ajustes para planear con eso.",

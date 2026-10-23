@@ -52,9 +52,11 @@ export const DEFAULT_SETTINGS = {
   trafficTime: '12:30',
   monthlyElementLimit: 4000,
   monthlyGeocodeLimit: 2000,
+  monthlyPathLimit: 1500, // road shapes drawn on the route map (one per route)
   driverCount: 3,
   drivers: ['Driver 1', 'Driver 2', 'Driver 3', 'Driver 4', 'Driver 5', 'Driver 6', 'Driver 7', 'Driver 8'],
   balance: 'low',
+  routeArea: 'some', // keep each driver in one part of town: off / some / strong (see AREA in app.js)
   trucks: {}, // driver name -> Geotab device id
   geotabRadius: 200,
   learnStops: true, // plan with real stop times from the trucks once a client has enough visits
@@ -210,14 +212,27 @@ function monthKey() {
   return localDate().slice(0, 7);
 }
 export function getUsage() {
-  return { elements: 0, geocodes: 0, ...(read('usage', {})[monthKey()] || {}) };
+  return { elements: 0, geocodes: 0, paths: 0, ...(read('usage', {})[monthKey()] || {}) };
 }
 export function addUsage(kind, n) {
   const all = read('usage', {});
-  const m = { elements: 0, geocodes: 0, ...(all[monthKey()] || {}) };
+  const m = { elements: 0, geocodes: 0, paths: 0, ...(all[monthKey()] || {}) };
   m[kind] += n;
   all[monthKey()] = m;
   write('usage', all);
+}
+
+// Road shapes for the route map, from Google (this browser only): { "lat,lng|lat,lng|...": [[lat, lng], ...] }
+export function getPaths() {
+  return read('paths', {});
+}
+export function savePath(key, path) {
+  const all = getPaths();
+  delete all[key];
+  all[key] = path;
+  const keys = Object.keys(all);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 60))) delete all[k]; // keep the newest 60
+  write('paths', all);
 }
 
 // ----- Sync -----

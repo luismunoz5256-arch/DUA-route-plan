@@ -22,7 +22,7 @@ const MAX_FAILS = 5;
 const LOCK_MINUTES = 15;
 const ROLES = ['admin', 'secretary', 'driver'];
 // The only settings a secretary may change (they're on the Plan screen).
-const SECRETARY_SETTINGS = ['driverCount', 'drivers', 'balance'];
+const SECRETARY_SETTINGS = ['driverCount', 'drivers', 'balance', 'routeArea'];
 
 function doGet() {
   return reply({ ok: true, app: 'dua-route-plan' });
