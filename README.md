@@ -153,6 +153,10 @@ The Geotab login is stored only on your Google Sheet server. It's never sent to 
 
 A stop counts as reached when the truck stops within 200 meters of the client's address. You can change that distance in Settings.
 
+**Driver scorecards.** Every time truck days are read (automatically when an admin opens the planner, on the Trucks tab, or with History's truck button), each driver's day is saved, and **History → Driver scorecards** shows the week per driver: stops reached, on time (no more than 15 minutes after the planned time), stops per hour on the road, average day out, how much later or earlier than planned they got back, idle time, miles, and stops that weren't on the route.
+
+**Loading lists.** Drivers' phones have a **Loading list** next to the route: their stops last first (the last stop goes in at the back of the truck), each with a **Loaded** button. The office route cards show how many are loaded (📦), and printed route sheets include the loading order with checkboxes.
+
 **Real stop times.** Every time the planner reads a truck's day, it records how long the truck stayed at each client on its route. When an admin opens the planner, it also reads any of the past week's days it hasn't read yet, so this (and the real return times for payroll) happens by itself. Once a client has 3 visits, planning uses the typical stay (the middle value, so one long lunch stop doesn't throw it off) instead of the typed unload time. Stops shorter than 1 minute or longer than 90 aren't counted, and only the last 20 visits are kept. The stop list and Clients list mark these times with 🚚, and the client form says how many visits they come from. Switch it off in **Settings → Truck tracking → Plan with real stop times from the trucks**.
 
 ## 4c. Connect QuickBooks Desktop (optional, admin)

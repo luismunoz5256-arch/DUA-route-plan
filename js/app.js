@@ -11,6 +11,7 @@ import { renderRoute, LOADED } from './routeview.js';
 import { analyzeDay, parseDuration, minuteOfDay } from './tracking.js';
 import { recordStays, learnedStop, MIN_VISITS } from './stays.js';
 import { forecastFor, isLikely, MIN_WEEKS } from './forecast.js';
+import { dayStats, weekScores, ON_TIME_MIN } from './scorecard.js';
 import { mapIn, pin, depotPin, fit } from './maps.js';
 import { t, locale, dayNames, translatePage, langSwitch } from './i18n.js';
 import {
@@ -1643,6 +1644,19 @@ function renderHistory() {
           .join('')
       : `<tr><td colspan="11" class="muted">${t('Nothing saved for this week yet.')}</td></tr>`);
 
+  const scores = weekScores(history, historyWeek);
+  const signed = (m) => (m == null ? '—' : m === 0 ? t('on time') : m > 0 ? t('{n} min later', { n: m }) : t('{n} min earlier', { n: -m }));
+  $('#score-rows').innerHTML =
+    `<tr><th>${t('Driver')}</th><th class="num">${t('Days')}</th><th class="num">${t('Stops reached')}</th><th class="num" title="${esc(t('Reached no more than {n} min after the planned time', { n: ON_TIME_MIN }))}">${t('On time')}</th><th class="num">${t('Stops per hour')}</th><th class="num">${t('Average day out')}</th><th class="num">${t('Back vs. plan')}</th><th class="num">${t('Idle')}</th><th class="num">${t('Miles')}</th><th class="num" title="${esc(t('Stops of 3+ minutes that were not on the route'))}">${t('Extra stops')}</th></tr>` +
+    (scores.length
+      ? scores
+          .map((r) => `<tr><td><b>${esc(r.name)}</b></td><td class="num">${r.days}</td><td class="num">${r.visited}/${r.planned}</td>
+            <td class="num ${r.onTimePct != null && r.onTimePct < 80 ? 'bad-text' : ''}">${r.onTimePct == null ? '—' : r.onTimePct + '%'}</td>
+            <td class="num">${r.stopsPerHour ?? '—'}</td><td class="num">${r.avgDayMin == null ? '—' : fmtDur(r.avgDayMin)}</td>
+            <td class="num ${r.vsPlanMin > 15 ? 'bad-text' : ''}">${signed(r.vsPlanMin)}</td><td class="num">${fmtDur(r.idleMin)}</td><td class="num">${r.miles}</td><td class="num">${r.unplanned}</td></tr>`)
+          .join('')
+      : `<tr><td colspan="10" class="muted">${t('No truck data for this week yet. It comes in by itself when an admin opens the planner, or with the button above.')}</td></tr>`);
+
   const sourceLabel = { truck: '🚚 ' + t('from truck'), manual: '✎ ' + t('typed in') };
   const dates = Object.keys(history).sort().reverse();
   $('#history-days').innerHTML = dates.length
@@ -1693,13 +1707,16 @@ $('#btn-week-trucks').addEventListener('click', (e) =>
         const date = addDays(historyWeek, i);
         if (date > localDate()) break;
         const reports = [];
+        const items = [];
         for (const p of pairs) {
           const trips = (week.trucks[p.id]?.trips || []).filter((tr) => localDate(new Date(tr.start)) === date);
           const r = trips.length ? analyzeDay({ trips, depot, planned: plannedStops(date, p.name), radius: num(settings.geotabRadius, 200) }) : null;
           if (r) reports.push(r);
+          if (r) items.push({ name: p.name, report: r });
           if (r?.back != null) returns.push([date, p.name, Math.round(minuteOfDay(r.back))]);
         }
         learnStops(date, reports);
+        saveTruckStats(date, items);
       }
       saveReturns(returns, 'truck');
       renderHistory();
@@ -2378,6 +2395,19 @@ function plannedStops(date, name) {
     .filter(Boolean);
 }
 
+// Each driver's day from the trucks, kept in History for the weekly scorecards (see scorecard.js).
+// items: [{ name, report }]. Trucks that didn't go out, or are still out, are skipped.
+function saveTruckStats(date, items) {
+  const routes = store.getRoutes()[date]?.drivers || {};
+  const stats = {};
+  for (const { name, report } of items) if (report?.left != null && !report.stillOut) stats[name] = dayStats(report, routes[name]?.back);
+  if (!Object.keys(stats).length) return;
+  const history = store.getHistory();
+  const day = history[date] || { drivers: [] };
+  history[date] = { ...day, stats: { ...day.stats, ...stats }, updated: Date.now() };
+  store.saveHistory(history);
+}
+
 // How long each truck stayed at each client it delivered to on `date` (see stays.js).
 // Visits still going on (no departure yet) don't count.
 function learnStops(date, reports) {
@@ -2399,16 +2429,17 @@ async function readPastTruckDays() {
     for (const date of dates) {
       const data = await api.call('geotabDay', { deviceIds: pairs.map((p) => p.id), ...localDayRange(date), trail: false });
       const returns = [];
-      const reports = [];
+      const items = [];
       for (const p of pairs) {
         const trips = data.trucks[p.id]?.trips || [];
         if (!trips.length) continue;
         const r = analyzeDay({ trips, depot, planned: plannedStops(date, p.name), radius: num(settings.geotabRadius, 200) });
-        reports.push(r);
+        items.push({ name: p.name, report: r });
         if (r.back != null) returns.push([date, p.name, Math.round(minuteOfDay(r.back))]);
       }
       saveReturns(returns, 'truck');
-      learnStops(date, reports);
+      learnStops(date, items.map((x) => x.report));
+      saveTruckStats(date, items);
       const history = store.getHistory();
       history[date] = { drivers: [], ...history[date], trucksRead: true, updated: Date.now() };
       store.saveHistory(history);
@@ -2475,6 +2506,7 @@ async function renderTrucks() {
     });
     const changed = saveReturns(returns, 'truck');
     learnStops(date, rows.map((r) => r.report));
+    saveTruckStats(date, rows);
     note.textContent =
       (today ? t('Live positions update every minute while this page is open. Return times feed into History automatically.') : t('Return times from the trucks are used in History (unless someone typed a time there).')) +
       (changed ? ' ' + t('History was updated with real return times.') : '');
