@@ -12,7 +12,7 @@
 export function mergeData(a, b) {
   if (!b) return a;
   if (!a) return b;
-  const deletedClients = { ...(a.deletedClients || {}) };
+  let deletedClients = { ...(a.deletedClients || {}) };
   for (const [id, t] of Object.entries(b.deletedClients || {})) deletedClients[id] = Math.max(t, deletedClients[id] || 0);
 
   const byId = new Map();
@@ -20,6 +20,7 @@ export function mergeData(a, b) {
     const cur = byId.get(c.id);
     if (!cur || (c.updated || 0) > (cur.updated || 0)) byId.set(c.id, c);
   }
+  deletedClients = withoutMassDeletes(deletedClients, byId.size);
   const clients = [...byId.values()].filter((c) => !(deletedClients[c.id] >= (c.updated || 0)));
 
   const byDate = (x, y) => {
@@ -50,6 +51,24 @@ export function mergeData(a, b) {
     plans,
     orders,
   };
+}
+
+// People delete clients one at a time. Most of the list deleted in the same minute means a computer
+// lost its copy, so those deletes are ignored and the clients stay.
+export function withoutMassDeletes(deleted, clientCount) {
+  const byMinute = new Map();
+  for (const [id, t] of Object.entries(deleted)) byMinute.set(Math.floor(t / 60000), [...(byMinute.get(Math.floor(t / 60000)) || []), id]);
+  const out = { ...deleted };
+  for (const ids of byMinute.values()) if (ids.length >= 5 && ids.length >= clientCount / 2) for (const id of ids) delete out[id];
+  return out;
+}
+
+// What a sync would wipe out: lists that held at least 5 items and would lose more than half.
+export function dataLoss(before, after) {
+  const count = { clients: (d) => (d?.clients || []).length, history: (d) => Object.keys(d?.history || {}).length, routes: (d) => Object.keys(d?.routes || {}).length };
+  return Object.entries(count)
+    .filter(([, n]) => n(before) >= 5 && n(after) < n(before) / 2)
+    .map(([name]) => name);
 }
 
 // JSON with sorted keys, so two equal objects always give the same text.

@@ -286,3 +286,35 @@ test('QuickBooks: each sent day is replaced, office saves keep it, drivers never
   assert.equal(s.call({ action: 'pull', token: admin }).data.qb.days['2026-10-21'].length, 1);
   assert.equal(s.call({ action: 'pull', token: ana }).data.qb, undefined);
 });
+
+test('a push that would wipe out most of the shared data is refused', () => {
+  const { s, sec } = setupServer();
+  const many = { ...DATA, clients: Array.from({ length: 10 }, (_, i) => ({ id: 'c' + i, name: 'C' + i })) };
+  assert.equal(s.call({ action: 'push', token: sec, data: many }).ok, true);
+  assert.match(s.call({ action: 'push', token: sec, data: { ...DATA, clients: [] } }).error, /protect your data/);
+  assert.equal(s.call({ action: 'pull', token: sec }).data.clients.length, 10);
+  // ordinary edits still save
+  assert.equal(s.call({ action: 'push', token: sec, data: { ...many, clients: many.clients.slice(1) } }).ok, true);
+});
+
+test('daily backups: kept for 14 days, listed and restored by an admin', () => {
+  const { s, admin, sec } = setupServer();
+  const withClients = (n) => ({ ...DATA, clients: Array.from({ length: n }, (_, i) => ({ id: 'c' + i, name: 'C' + i })) });
+  s.setToday('2026-10-01');
+  s.call({ action: 'push', token: sec, data: withClients(6) }); // nothing to back up yet
+  for (let d = 2; d <= 20; d++) {
+    s.setToday(`2026-10-${String(d).padStart(2, '0')}`);
+    s.call({ action: 'push', token: sec, data: withClients(6 + d) });
+    s.call({ action: 'push', token: sec, data: withClients(6 + d) }); // a second save the same day: no new backup
+  }
+  const backups = s.sheetNames().filter((n) => n.startsWith('backup '));
+  assert.equal(backups.length, 14);
+  assert.match(s.call({ action: 'listBackups', token: sec }).error, /Not allowed/);
+  const list = s.call({ action: 'listBackups', token: admin }).backups;
+  assert.equal(list[0].date, '2026-10-20'); // newest first
+  assert.equal(list[0].clients, 6 + 19); // the data as it was before that day's first save
+  // restore an older day
+  assert.equal(s.call({ action: 'restoreBackup', token: admin, date: '2026-10-10' }).ok, true);
+  assert.equal(s.call({ action: 'pull', token: admin }).data.clients.length, 6 + 9);
+  assert.match(s.call({ action: 'restoreBackup', token: admin, date: '2025-01-01' }).error, /No backup/);
+});

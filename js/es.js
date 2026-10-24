@@ -1,6 +1,21 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "No backup for that day.": "No hay copia de ese día.",
+  "Sync stopped to protect your data (it would have removed most of: {what}). Nothing was changed.": "La sincronización se detuvo para proteger sus datos (habría quitado la mayoría de: {what}). No se cambió nada.",
+  "clients": "clientes",
+  "history": "historial",
+  "routes": "rutas",
+  "No backups yet: the first one is made with tomorrow's first save.": "Todavía no hay copias: la primera se hace con el primer guardado de mañana.",
+  "History days": "Días de historial",
+  "Route days": "Días de rutas",
+  "Restore this day": "Restaurar este día",
+  "Update the Google Sheet script (Code.gs) to get daily backups. See the README.": "Actualice el script de la hoja de Google (Code.gs) para tener copias diarias. Vea el README.",
+  "Put back the data from {date}? Everything from that day comes back, including clients deleted since; anything added since is kept.": "¿Volver a los datos del {date}? Todo lo de ese día regresa, incluso clientes borrados después; lo que se agregó después se conserva.",
+  "Restored. Clients: {n}.": "Restaurado. Clientes: {n}.",
+  "Daily backups on the Google Sheet": "Copias diarias en la hoja de Google",
+  "The Google Sheet keeps a copy of all the data from each of the last 14 days (made before the first save of the day). If something goes wrong, put a day back here. Everything from that day comes back (including clients deleted since), and nothing added since is lost: it's combined with what each computer has.": "La hoja de Google guarda una copia de todos los datos de cada uno de los últimos 14 días (hecha antes del primer guardado del día). Si algo sale mal, vuelva a un día aquí. Todo lo de ese día regresa (incluso clientes borrados después) y no se pierde nada de lo que se agregó después: se combina con lo que tiene cada computadora.",
+  "Show backups": "Ver copias",
   "on time": "a tiempo",
   "{n} min later": "{n} min más tarde",
   "{n} min earlier": "{n} min más temprano",

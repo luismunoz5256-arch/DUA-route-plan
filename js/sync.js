@@ -3,7 +3,7 @@
 // Driver: download only their own routes.
 import * as store from './store.js';
 import * as api from './api.js';
-import { mergeData, canonical } from './merge.js';
+import { mergeData, canonical, dataLoss } from './merge.js';
 import { t } from './i18n.js';
 
 // Same list as SECRETARY_SETTINGS in apps-script/Code.gs.
@@ -50,6 +50,9 @@ export async function syncNow() {
         merged.settings = { ...remote.settings, ...(store.getSyncState().last ? own : {}) };
         merged.settingsUpdated = remote.settingsUpdated || 0;
       }
+      // Safety net: a sync never wipes out most of the clients, history or routes, here or on the server.
+      const lost = [...new Set([...dataLoss(local, merged), ...dataLoss(remote, merged)])];
+      if (lost.length) throw new Error(t('Sync stopped to protect your data (it would have removed most of: {what}). Nothing was changed.', { what: lost.map((x) => t(x)).join(', ') }));
       const mergedText = canonical(merged);
       if (mergedText !== canonical(local)) {
         store.importSyncData(merged);

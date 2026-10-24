@@ -92,6 +92,11 @@ export function getClients() {
 export function saveClients(list) {
   const strip = ({ updated, ...rest }) => JSON.stringify(rest);
   const prev = new Map(getClients().map((c) => [c.id, strip(c)]));
+  // An empty list replacing a real one is a mistake (the list wasn't loaded), never a person's choice.
+  if (!list.length && prev.size >= 3) {
+    console.warn('Not saving an empty client list over', prev.size, 'clients');
+    return;
+  }
   const now = Date.now();
   let any = prev.size !== list.length;
   for (const c of list) {
@@ -235,17 +240,24 @@ export function addUsage(kind, n) {
   write('usage', all);
 }
 
-// Road shapes for the route map, from Google (this browser only): { "lat,lng|lat,lng|...": [[lat, lng], ...] }
-export function getPaths() {
-  return read('paths', {});
+// Road shapes for the route map, from Google (this browser only), as Google's compact encoded
+// polylines: { "lat,lng|lat,lng|...": ["encoded", ...] }. Only a nice-to-have, so it never
+// complains when the browser is short of space: it just keeps fewer.
+localStorage.removeItem(PREFIX + 'paths'); // the bulkier format used before
+export function getRoads() {
+  return read('roads', {});
 }
-export function savePath(key, path) {
-  const all = getPaths();
+export function saveRoad(key, pieces) {
+  const all = getRoads();
   delete all[key];
-  all[key] = path;
+  all[key] = pieces;
   const keys = Object.keys(all);
-  for (const k of keys.slice(0, Math.max(0, keys.length - 60))) delete all[k]; // keep the newest 60
-  write('paths', all);
+  for (const k of keys.slice(0, Math.max(0, keys.length - 40))) delete all[k]; // keep the newest 40
+  try {
+    localStorage.setItem(PREFIX + 'roads', JSON.stringify(all));
+  } catch {
+    localStorage.removeItem(PREFIX + 'roads');
+  }
 }
 
 // ----- Sync -----

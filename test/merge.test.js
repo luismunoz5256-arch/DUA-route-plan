@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeData, canonical } from '../js/merge.js';
+import { mergeData, canonical, dataLoss } from '../js/merge.js';
 
 const base = { clients: [], deletedClients: {}, history: {}, matrix: {}, settings: {}, settingsUpdated: 0, routes: {}, done: {} };
 
@@ -74,4 +74,23 @@ test('order history merges by date', () => {
   const m = mergeData({ ...base, orders: { d1: { updated: 2, ids: ['a'] } } }, { ...base, orders: { d1: { updated: 1, ids: [] }, d0: { updated: 1, ids: ['b'] } } });
   assert.deepEqual(m.orders.d1.ids, ['a']);
   assert.deepEqual(m.orders.d0.ids, ['b']);
+});
+
+test('most clients deleted in the same minute is treated as a mistake and ignored', () => {
+  const clients = Array.from({ length: 10 }, (_, i) => ({ id: 'c' + i, updated: 1 }));
+  const t = 1_800_000_000_000;
+  const mass = Object.fromEntries(clients.slice(0, 8).map((c, i) => [c.id, t + i * 100]));
+  const m = mergeData({ ...base, clients: [], deletedClients: mass }, { ...base, clients });
+  assert.equal(m.clients.length, 10);
+  assert.deepEqual(m.deletedClients, {});
+  // a few deletes, one at a time, still spread
+  const few = { c1: t, c2: t + 120_000 };
+  assert.equal(mergeData({ ...base, clients, deletedClients: few }, { ...base, clients }).clients.length, 8);
+});
+
+test('a sync that would wipe out most of a list is detected', () => {
+  const full = { clients: Array.from({ length: 10 }, (_, i) => ({ id: 'c' + i })), history: Object.fromEntries(Array.from({ length: 6 }, (_, i) => ['d' + i, {}])), routes: {} };
+  assert.deepEqual(dataLoss(full, { clients: full.clients.slice(0, 3), history: {}, routes: {} }), ['clients', 'history']);
+  assert.deepEqual(dataLoss(full, full), []);
+  assert.deepEqual(dataLoss({ clients: [{ id: 'a' }] }, { clients: [] }), [], 'tiny lists are not protected');
 });

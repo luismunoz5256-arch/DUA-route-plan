@@ -9,10 +9,12 @@ const crypto = require('crypto');
 exports.createServer = function createServer({ setupCode = 'test-setup-code', geotab = null } = {}) {
   const sheets = new Map();
   const properties = new Map();
+  let today = null; // setToday('2026-10-21') pretends it's that day (for daily backups)
 
-  function fakeSheet() {
+  function fakeSheet(name) {
     let rows = [];
     return {
+      getName: () => name,
       getLastRow: () => rows.length,
       clearContents: () => (rows = []),
       getRange: (r, c, n) => ({
@@ -27,10 +29,12 @@ exports.createServer = function createServer({ setupCode = 'test-setup-code', ge
       getActiveSpreadsheet: () => ({
         getSheetByName: (n) => sheets.get(n) || null,
         insertSheet: (n) => {
-          const s = fakeSheet();
+          const s = fakeSheet(n);
           sheets.set(n, s);
           return s;
         },
+        getSheets: () => [...sheets.values()],
+        deleteSheet: (s) => sheets.delete(s.getName()),
       }),
     },
     PropertiesService: {
@@ -45,9 +49,11 @@ exports.createServer = function createServer({ setupCode = 'test-setup-code', ge
       getUuid: () => crypto.randomUUID(),
       DigestAlgorithm: { SHA_256: 'sha256' },
       Charset: { UTF_8: 'utf8' },
+      formatDate: (d) => today || d.toISOString().slice(0, 10),
       computeDigest: (alg, text) => [...crypto.createHash(alg).update(text, 'utf8').digest()].map((b) => (b > 127 ? b - 256 : b)),
     },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    Session: { getScriptTimeZone: () => 'America/Denver' },
     CacheService: { getScriptCache: () => ({ get: () => null, put() {} }) },
     UrlFetchApp: {
       fetch(url, opts) {
@@ -76,6 +82,10 @@ exports.createServer = function createServer({ setupCode = 'test-setup-code', ge
   vm.runInContext(code + '\n;this.__doPost = doPost;', context);
 
   return {
+    setToday(d) {
+      today = d;
+    },
+    sheetNames: () => [...sheets.keys()],
     call(req) {
       return JSON.parse(context.__doPost({ postData: { contents: JSON.stringify(req) } }).text);
     },

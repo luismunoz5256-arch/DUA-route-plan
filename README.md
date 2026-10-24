@@ -106,6 +106,15 @@ Good to know:
 - **Changing the script later:** update it in Apps Script, then **Deploy → Manage deployments → Edit → Version: New version → Deploy**. That keeps the same URL.
 - **Google key:** the admin enters it once in Settings. It's shared with admin and secretary logins so they can build routes, but never sent to drivers.
 
+## If data goes missing
+
+Your data lives in the Google Sheet, so it can be brought back:
+
+1. **Daily backups (after updating `Code.gs`):** in the planner, **Settings → Backup → Show backups**. The Sheet keeps a copy of all the data from each of the last 14 days; click **Restore this day** on a day from before the problem.
+2. **Google Sheets version history (always available):** open the Google Sheet → **File → Version history → See version history**. Pick a time from before the problem (the **data** tab holds everything), click **Restore this version**, then reload the planner on each computer.
+
+Safety nets: the server refuses any save that would remove most of the clients, history or routes; the planner ignores most of the clients being deleted in the same minute (people delete one at a time); and a sync that would wipe out most of a list stops and says so.
+
 ## 4. First-time setup in the planner (as admin)
 
 1. **Settings** → check the warehouse address → **Find** → **Save settings**. Also check clock-in (8:00), leave (11:30), latest return, hourly pay ($14), regular hours (8/day, 40/week), fuel cost per mile, default unload time and the default priority "deliver by" time.

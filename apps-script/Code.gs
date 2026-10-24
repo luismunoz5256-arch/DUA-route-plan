@@ -99,6 +99,12 @@ function handle(req) {
     case 'qbKey':
       requireRole(user, ['admin']);
       return withLock(() => qbKey());
+    case 'listBackups':
+      requireRole(user, ['admin']);
+      return { backups: listBackups() };
+    case 'restoreBackup':
+      requireRole(user, ['admin']);
+      return withLock(() => restoreBackup(req.date));
   }
   throw new Error('Unknown action');
 }
@@ -299,6 +305,10 @@ function push(user, incoming) {
   const next = Object.assign({}, incoming);
   next.done = cur.done || {}; // only drivers change these, through markDone
   next.qb = cur.qb; // only the QuickBooks helper changes this, through qbPush
+  // Safety net: one computer can never wipe out most of the shared clients, history or routes.
+  const lost = dataLoss(cur, next);
+  if (lost.length) throw new Error('Not saved, to protect your data: this would remove most of the ' + lost.join(', ') + '.');
+  backupToday(cur);
   if (user.role !== 'admin') {
     const settings = Object.assign({}, cur.settings);
     SECRETARY_SETTINGS.forEach((k) => {
@@ -321,6 +331,64 @@ function markDone(user, req) {
   else delete mine[req.stopId];
   save(data);
   return { done: mine };
+}
+
+// ---------- Backups ----------
+// Once a day, before the first save, the shared data is copied to a sheet named "backup YYYY-MM-DD".
+// The last 14 are kept, and an admin can put one back from the planner's Settings.
+
+const BACKUP_DAYS = 14;
+
+// Lists that held at least 5 items and would lose more than half.
+function dataLoss(before, after) {
+  const counts = {
+    clients: (d) => (d.clients || []).length,
+    history: (d) => Object.keys(d.history || {}).length,
+    routes: (d) => Object.keys(d.routes || {}).length,
+  };
+  return Object.keys(counts).filter((k) => counts[k](before) >= 5 && counts[k](after) < counts[k](before) / 2);
+}
+
+function backupSheets() {
+  return SpreadsheetApp.getActiveSpreadsheet()
+    .getSheets()
+    .map((s) => s.getName())
+    .filter((n) => /^backup \d{4}-\d{2}-\d{2}$/.test(n))
+    .sort();
+}
+
+function backupToday(data) {
+  if (!data || !Object.keys(data).length) return;
+  const name = 'backup ' + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const existing = backupSheets();
+  if (existing.indexOf(name) >= 0) return;
+  writeJson(name, data);
+  existing.concat([name]).sort().slice(0, -BACKUP_DAYS).forEach((n) => SpreadsheetApp.getActiveSpreadsheet().deleteSheet(sheet(n)));
+}
+
+function listBackups() {
+  return backupSheets()
+    .reverse()
+    .map((n) => {
+      const data = readJson(n) || {};
+      return { date: n.slice(7), clients: (data.clients || []).length, history: Object.keys(data.history || {}).length, routes: Object.keys(data.routes || {}).length };
+    });
+}
+
+// Puts a backup back as the shared data (today's data is backed up first, if it wasn't yet).
+function restoreBackup(date) {
+  const data = backupSheets().indexOf('backup ' + date) >= 0 && readJson('backup ' + date);
+  if (!data) throw new Error('No backup for that day.');
+  const cur = load() || {};
+  backupToday(cur);
+  data.done = cur.done || data.done || {};
+  data.qb = cur.qb || data.qb;
+  // Restored clients count as just edited, so deletes made since (on any computer) don't remove them again.
+  const now = Date.now();
+  data.clients = (data.clients || []).map((c) => Object.assign({}, c, { updated: now }));
+  data.deletedClients = {};
+  save(data);
+  return { ok: true, restored: date };
 }
 
 // ---------- QuickBooks Desktop link ----------

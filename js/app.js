@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { geocode, roadPath } from './google.js';
+import { geocode, roadPath, decodePolyline } from './google.js';
 import { missingPlan, fillMissing, assemble, nextTrafficDeparture } from './matrix.js';
 import { solve, summarize, insertStop, costOf } from './solver.js';
 import { overtimeStart, laborCost, minutesBefore, weekSummary, recordReturn } from './pay.js';
@@ -1594,7 +1594,7 @@ function renderRouteMap(ev) {
     line.push(d);
     if (!r.order.length) return;
     // Straight lines first; the real roads replace them when Google has them (see drawRoads).
-    const known = store.getPaths()[pathKey(line)];
+    const known = store.getRoads()[pathKey(line)]?.flatMap(decodePolyline);
     const poly = L.polyline(known || line, { color, weight: 4, opacity: 0.75, dashArray: known || !settings.apiKey ? null : '6 8' }).addTo(layer);
     if (!known && settings.apiKey) drawRoad(poly, line);
   });
@@ -1609,9 +1609,9 @@ async function drawRoad(poly, line) {
   if (store.getUsage().paths >= num(settings.monthlyPathLimit, 1500)) return poly.setStyle({ dashArray: null });
   try {
     store.addUsage('paths', 1);
-    const path = await roadPath(settings.apiKey, line.map(([lat, lng]) => ({ lat, lng })));
-    store.savePath(pathKey(line), path);
-    poly.setLatLngs(path);
+    const pieces = await roadPath(settings.apiKey, line.map(([lat, lng]) => ({ lat, lng })));
+    store.saveRoad(pathKey(line), pieces);
+    poly.setLatLngs(pieces.flatMap(decodePolyline));
   } catch (err) {
     console.warn(err);
   }
@@ -2270,6 +2270,36 @@ $('#btn-clear-matrix').addEventListener('click', () => {
   store.saveMatrixCache({});
   store.saveMatrixCache({}, true);
   renderSettings();
+});
+
+// Daily backups kept on the Google Sheet (see backupToday in Code.gs).
+$('#btn-list-backups').addEventListener('click', (e) =>
+  busy(e.currentTarget, async () => {
+    try {
+      const { backups } = await api.call('listBackups');
+      $('#backup-msg').textContent = backups.length ? '' : t('No backups yet: the first one is made with tomorrow\'s first save.');
+      $('#backup-rows').innerHTML = backups.length
+        ? `<tr><th>${t('Day')}</th><th class="num">${t('Clients')}</th><th class="num">${t('History days')}</th><th class="num">${t('Route days')}</th><th></th></tr>` +
+          backups.map((b) => `<tr><td>${esc(fmtDateLong(b.date))}</td><td class="num">${b.clients}</td><td class="num">${b.history}</td><td class="num">${b.routes}</td><td><button class="secondary" data-restore="${esc(b.date)}">${t('Restore this day')}</button></td></tr>`).join('')
+        : '';
+    } catch (err) {
+      $('#backup-msg').innerHTML = /Unknown action/.test(err.message) ? errorText(new Error(t('Update the Google Sheet script (Code.gs) to get daily backups. See the README.'))) : errorText(err);
+    }
+  }),
+);
+$('#backup-rows').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-restore]');
+  if (!b || !confirm(t('Put back the data from {date}? Everything from that day comes back, including clients deleted since; anything added since is kept.', { date: fmtDateLong(b.dataset.restore) }))) return;
+  busy(b, async () => {
+    try {
+      await api.call('restoreBackup', { date: b.dataset.restore });
+      await syncNow();
+      reloadFromStore();
+      $('#backup-msg').textContent = t('Restored. Clients: {n}.', { n: clients.length });
+    } catch (err) {
+      $('#backup-msg').innerHTML = errorText(err);
+    }
+  });
 });
 
 $('#btn-backup').addEventListener('click', () => {

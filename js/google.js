@@ -108,9 +108,10 @@ export function decodePolyline(text) {
 }
 
 // The roads a truck drives through `points` in order ([{ lat, lng }], warehouse first and last),
-// as [[lat, lng], ...] for drawing on the map. Long routes are asked for in pieces.
+// as Google's compact encoded polylines (one per piece; long routes are asked for in pieces).
+// decodePolyline turns them into map points.
 export async function roadPath(apiKey, points) {
-  const path = [];
+  const pieces = [];
   for (let i = 0; i < points.length - 1; i += MAX_STOPS_BETWEEN + 1) {
     const piece = points.slice(i, i + MAX_STOPS_BETWEEN + 2);
     const res = await fetch(ROUTES_URL, {
@@ -127,7 +128,7 @@ export async function roadPath(apiKey, points) {
     if (!res.ok) throw new Error(t('Google route drawing error {code}', { code: res.status }));
     const encoded = (await res.json()).routes?.[0]?.polyline?.encodedPolyline;
     if (!encoded) throw new Error(t('Google found no road route.'));
-    path.push(...decodePolyline(encoded));
+    pieces.push(encoded);
   }
-  return path;
+  return pieces;
 }
