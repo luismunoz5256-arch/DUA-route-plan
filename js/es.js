@@ -1,6 +1,11 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "Ordered {k} of the last {n} times on this weekday": "Pidió {k} de las últimas {n} veces en este día de la semana",
+  "📈 Forecast for {day}: {n} clients ordered on at least half of the last {weeks} same weekdays and are checked on a new day. 📈 3/4 = ordered 3 of the last 4 times.": "📈 Pronóstico para {day}: {n} clientes pidieron en al menos la mitad de los últimos {weeks} días iguales de la semana y se marcan en un día nuevo. 📈 3/4 = pidió 3 de las últimas 4 veces.",
+  "📈 The order forecast for {day} starts after 2 weeks of routes on that weekday; until then the usual days are used.": "📈 El pronóstico de pedidos para {day} empieza después de 2 semanas de rutas en ese día; mientras tanto se usan los días de siempre.",
+  "Select likely orders": "Marcar pedidos probables",
+  "Order forecast: on a new day, check the clients who ordered on at least half of the same weekdays lately (instead of only their usual days)": "Pronóstico de pedidos: en un día nuevo, marcar los clientes que pidieron en al menos la mitad de los mismos días de la semana últimamente (en lugar de solo sus días de siempre)",
   "Getting afternoon traffic times": "Obteniendo tiempos con tráfico de la tarde",
   "Drive times from Google with typical traffic around {time}, and around {time2} for driving after {after}.": "Tiempos de manejo de Google con el tráfico típico de las {time}, y de las {time2} para manejar después de las {after}.",
   "Afternoon traffic sample time (blank = off)": "Hora de muestra del tráfico de la tarde (en blanco = no usar)",
@@ -364,7 +369,6 @@ export const ES = {
   "Search…": "Buscar…",
   "Secretary": "Secretario/a",
   "Secretary – clients, stops, routes, history": "Secretario/a – clientes, paradas, rutas, historial",
-  "Select today's regulars": "Seleccionar los fijos de hoy",
   "Server (leave as my.geotab.com)": "Servidor (déjelo como my.geotab.com)",
   "Server address (from the admin)": "Dirección del servidor (se la da el administrador)",
   "Set the warehouse location first.": "Primero ponga la ubicación de la bodega.",

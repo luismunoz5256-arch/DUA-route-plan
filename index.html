@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <meta name="build" content="3ee853b2" />
+    <meta name="build" content="eed800a0" />
     <title>DUA Route Planner</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
@@ -15,7 +15,7 @@
     <meta name="apple-mobile-web-app-title" content="DUA Routes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
-    <link rel="stylesheet" href="css/style.css?v=840595f7" />
+    <link rel="stylesheet" href="css/style.css?v=bab4a7ab" />
     <link rel="stylesheet" href="css/driver.css?v=b148af42" />
   </head>
   <body class="logged-out">
@@ -159,11 +159,12 @@
             <h2>Stops <span id="stop-count" class="muted"></span></h2>
             <div class="row wrap gap small-gap">
               <input type="search" id="stop-search" placeholder="Search clients…" />
-              <button id="btn-select-scheduled" class="secondary">Select today's regulars</button>
+              <button id="btn-select-scheduled" class="secondary">Select likely orders</button>
               <button id="btn-fill-drivers" class="secondary">Fill in usual drivers</button>
               <button id="btn-select-none" class="secondary">Clear</button>
             </div>
           </div>
+          <p id="forecast-note" class="muted small forecast-note"></p>
           <p id="qb-note" class="qb-note" hidden></p>
           <div id="live-note" class="live-note" hidden>
             <p id="live-note-text"></p>
@@ -312,6 +313,7 @@
           <label>Orders close at <input name="orderCutoff" type="time" /></label>
           <label>Keep a client with their usual driver unless moving saves more than ($) <input name="keepWithDriver" type="number" step="1" min="0" /></label>
           <label>Learn usual drivers until (no usual drivers before then) <input name="learnUntil" type="date" /></label>
+          <label class="inline span2"><input type="checkbox" name="forecast" /> Order forecast: on a new day, check the clients who ordered on at least half of the same weekdays lately (instead of only their usual days)</label>
           <p class="span2 muted small" id="learn-line"></p>
           <p class="span2 muted small">After routes are built, new orders go straight onto a truck so drivers can load while orders come in. At closing time the app sets each driver's best driving order without moving stops between trucks.</p>
 
@@ -387,7 +389,7 @@
         <div class="card prose" data-lang="en">
           <h2>Daily use</h2>
           <ol>
-            <li>Open <b>Plan routes</b>. Pick the delivery date. Clients who usually order that day are already checked.</li>
+            <li>Open <b>Plan routes</b>. Pick the delivery date. Clients expected to order are already checked: from past orders on the same weekday (📈 3/4 = ordered 3 of the last 4 times), or their usual days until there's enough history.</li>
             <li>Check or uncheck stops to match today's orders. Tick <b>Priority</b> for anything that must arrive early and set its <b>Deliver by</b> time.</li>
             <li>Choose the number of drivers. Check each driver's hours so far this week (filled in from History).</li>
             <li>Click <b>Build routes</b>. You see the plan for the number of drivers you picked. <b>Compare driver counts</b> also shows one driver fewer and one more, with labor (overtime at 1.5×) and fuel. The cheapest on-time plan is marked <span class="tag good">Best</span>; click its row (or <b>Show that plan</b>) to switch to it.</li>
@@ -442,7 +444,7 @@
         <div class="card prose" data-lang="es">
           <h2>Uso diario</h2>
           <ol>
-            <li>Abra <b>Planear rutas</b>. Elija la fecha de entrega. Los clientes que suelen pedir ese día ya están marcados.</li>
+            <li>Abra <b>Planear rutas</b>. Elija la fecha de entrega. Los clientes que probablemente pidan ya están marcados: según los pedidos pasados del mismo día de la semana (📈 3/4 = pidió 3 de las últimas 4 veces), o sus días de siempre mientras no haya suficiente historial.</li>
             <li>Marque o desmarque paradas según los pedidos de hoy. Marque <b>Prioridad</b> en lo que debe llegar temprano y ponga su hora en <b>Entregar antes de</b>.</li>
             <li>Elija el número de choferes. Revise las horas de cada chofer en lo que va de la semana (vienen del Historial).</li>
             <li>Haga clic en <b>Crear rutas</b>. Verá el plan con el número de choferes que eligió. <b>Comparar número de choferes</b> también muestra un chofer menos y uno más, con mano de obra (tiempo extra a 1.5×) y combustible. El plan más barato a tiempo está marcado como <span class="tag good">Mejor</span>; haga clic en su fila (o en <b>Ver ese plan</b>) para cambiar a él.</li>
@@ -536,7 +538,7 @@
     </dialog>
 
     <script src="vendor/leaflet/leaflet.js"></script>
-    <script type="importmap">{"imports":{"./js/api.js":"./js/api.js?v=e1a24704","./js/app.js":"./js/app.js?v=8b104151","./js/config.js":"./js/config.js?v=68783d5e","./js/driver.js":"./js/driver.js?v=ed87f02d","./js/es.js":"./js/es.js?v=8b072828","./js/google.js":"./js/google.js?v=cca367a8","./js/i18n.js":"./js/i18n.js?v=7236dc39","./js/maps.js":"./js/maps.js?v=6347d58e","./js/matrix.js":"./js/matrix.js?v=3d7c1ad5","./js/merge.js":"./js/merge.js?v=7f2fb75c","./js/pay.js":"./js/pay.js?v=3a38de1c","./js/routeview.js":"./js/routeview.js?v=d175ee8f","./js/share.js":"./js/share.js?v=b023bbd3","./js/solver-worker.js":"./js/solver-worker.js?v=821c0718","./js/solver.js":"./js/solver.js?v=4fa50640","./js/stays.js":"./js/stays.js?v=99a8d412","./js/store.js":"./js/store.js?v=169a210f","./js/sync.js":"./js/sync.js?v=2871b3f9","./js/tracking.js":"./js/tracking.js?v=5612cc24","./js/util.js":"./js/util.js?v=1ecf69be"}}</script>
-    <script type="module" src="js/app.js?v=8b104151"></script>
+    <script type="importmap">{"imports":{"./js/api.js":"./js/api.js?v=e1a24704","./js/app.js":"./js/app.js?v=a6abd42d","./js/config.js":"./js/config.js?v=68783d5e","./js/driver.js":"./js/driver.js?v=ed87f02d","./js/es.js":"./js/es.js?v=ea0ecbff","./js/forecast.js":"./js/forecast.js?v=6dea3fa6","./js/google.js":"./js/google.js?v=cca367a8","./js/i18n.js":"./js/i18n.js?v=7236dc39","./js/maps.js":"./js/maps.js?v=6347d58e","./js/matrix.js":"./js/matrix.js?v=3d7c1ad5","./js/merge.js":"./js/merge.js?v=f2ad8560","./js/pay.js":"./js/pay.js?v=3a38de1c","./js/routeview.js":"./js/routeview.js?v=d175ee8f","./js/share.js":"./js/share.js?v=b023bbd3","./js/solver-worker.js":"./js/solver-worker.js?v=821c0718","./js/solver.js":"./js/solver.js?v=4fa50640","./js/stays.js":"./js/stays.js?v=99a8d412","./js/store.js":"./js/store.js?v=fe3a5ae9","./js/sync.js":"./js/sync.js?v=2871b3f9","./js/tracking.js":"./js/tracking.js?v=5612cc24","./js/util.js":"./js/util.js?v=1ecf69be"}}</script>
+    <script type="module" src="js/app.js?v=a6abd42d"></script>
   </body>
 </html>

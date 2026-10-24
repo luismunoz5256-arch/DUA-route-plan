@@ -148,6 +148,8 @@ table.week td.num, table.week th.num { text-align: right; }
 .day-hours-grid .day { font-size: 0.9rem; }
 .merge-row { display: flex; align-items: flex-end; gap: 0.5rem; padding-top: 0.4rem; border-top: 1px dashed var(--line); }
 .qb-note { font-size: 0.85rem; margin: 0 0 0.7rem; }
+.tag.forecast { background: #e6f0fa; color: #22548a; }
+.forecast-note { margin: 0 0 0.6rem; }
 .tag.on-route { background: var(--route); color: #fff; }
 #final-card h2 { margin: 0; }
 #final-note { margin: 0.6rem 0 0; }

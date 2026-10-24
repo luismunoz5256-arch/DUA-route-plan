@@ -5,7 +5,8 @@
 // Shape: { clients: [], deletedClients: {id: time}, history: {date: entry},
 //          matrix / matrix2: {pair: [min, meters]} (midday / afternoon), settings: {}, settingsUpdated: time,
 //          routes: {date: {updated, drivers}}, done: {date: {driver: {stopId: time}}},
-//          days: {date: {updated, selected, ...}}, plans: {date: {updated, ...plan}} }
+//          days: {date: {updated, selected, ...}}, plans: {date: {updated, ...plan}},
+//          orders: {date: {updated, ids}} }
 // `done` belongs to the server (drivers tick stops there), so b's copy wins when a is local.
 
 export function mergeData(a, b) {
@@ -32,6 +33,7 @@ export function mergeData(a, b) {
   const routes = byDate(a.routes, b.routes);
   const days = byDate(a.days, b.days);
   const plans = byDate(a.plans, b.plans);
+  const orders = byDate(a.orders, b.orders);
 
   const aNewer = (a.settingsUpdated || 0) >= (b.settingsUpdated || 0);
   return {
@@ -46,6 +48,7 @@ export function mergeData(a, b) {
     done: b.done || a.done || {},
     days,
     plans,
+    orders,
   };
 }
 

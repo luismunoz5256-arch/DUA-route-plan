@@ -69,3 +69,9 @@ test('afternoon drive times merge like midday ones', () => {
   const m = mergeData({ ...base, matrix2: { 'a|b': [5, 1] } }, { ...base, matrix2: { 'a|c': [7, 2] } });
   assert.deepEqual(Object.keys(m.matrix2).sort(), ['a|b', 'a|c']);
 });
+
+test('order history merges by date', () => {
+  const m = mergeData({ ...base, orders: { d1: { updated: 2, ids: ['a'] } } }, { ...base, orders: { d1: { updated: 1, ids: [] }, d0: { updated: 1, ids: ['b'] } } });
+  assert.deepEqual(m.orders.d1.ids, ['a']);
+  assert.deepEqual(m.orders.d0.ids, ['b']);
+});

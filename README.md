@@ -193,7 +193,7 @@ If the test says **QBXMLRP2 is missing**, the QuickBooks connector isn't install
 
 ## 5. Daily use
 
-1. **Plan routes** → pick the date. Clients who usually order that weekday are already checked.
+1. **Plan routes** → pick the date. Clients expected to order are already checked: once there are 2 weeks of routes for that weekday, that's every client who ordered on at least half of the same weekdays in the last 12 weeks (📈 3/4 = ordered 3 of the last 4 times); before that, clients whose usual days include it. **Select likely orders** checks them again after changes. The forecast can be switched off in Settings → Orders & usual drivers.
 2. Check or uncheck stops to match today's orders. Tick **Priority** for urgent stops and set **Deliver by**. Add a note for today if needed.
 3. Choose the number of drivers. Check their names and **hours worked this week** (filled in from History; type over it if it's wrong). Click **Build routes**.
 4. In **Compare driver counts**, see labor (with overtime), fuel and total for one driver fewer, the number you asked for, and one more. You see the plan for the number of drivers you picked. The cheapest workable plan is marked **Best**; click its row (or **Show that plan**) to switch to it.

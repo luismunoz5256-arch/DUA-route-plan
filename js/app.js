@@ -10,6 +10,7 @@ import * as api from './api.js';
 import { renderRoute, LOADED } from './routeview.js';
 import { analyzeDay, parseDuration, minuteOfDay } from './tracking.js';
 import { recordStays, learnedStop, MIN_VISITS } from './stays.js';
+import { forecastFor, isLikely, MIN_WEEKS } from './forecast.js';
 import { mapIn, pin, depotPin, fit } from './maps.js';
 import { t, locale, dayNames, translatePage, langSwitch } from './i18n.js';
 import {
@@ -449,10 +450,28 @@ const unloadText = (c) => {
 // usual driver when the client is set to "Always this driver". '' = the planner decides.
 const assignedDriver = (c, sel) => sel?.driver || (c.fixedDriver ? c.homeDriver : '') || '';
 
-function newDay(date) {
+// The first time, the order history starts from the routes already saved (the last 30 days).
+function seedOrders() {
+  if (Object.keys(store.getOrders()).length) return;
+  for (const [date, day] of Object.entries(store.getRoutes())) {
+    if (date >= localDate()) continue;
+    const ids = Object.values(day.drivers || {}).flatMap((r) => (r.stops || []).map((s) => s.id).filter(Boolean));
+    if (ids.length) store.saveOrdersDay(date, ids);
+  }
+}
+
+// Clients expected to order on `date`: likely from past orders (see forecast.js) once there's
+// enough history for that weekday, else the client's usual days.
+function expectedClients(date) {
+  const f = forecastFor(date, store.getOrders());
   const weekday = weekdayOf(date);
+  const likely = (c) => (settings.forecast === false ? null : isLikely(f, c.id));
+  return clients.filter((c) => c.active !== false && (likely(c) ?? isScheduled(c, weekday)));
+}
+
+function newDay(date) {
   const selected = {};
-  for (const c of clients) if (isScheduled(c, weekday)) selected[c.id] = newSelection();
+  for (const c of expectedClients(date)) selected[c.id] = newSelection();
   return { selected, shiftStart: settings.shiftStart, start: settings.start, latestReturn: settings.latestReturn, weekHours: {} };
 }
 
@@ -520,6 +539,17 @@ function renderStops() {
   const learned = usualDrivers();
   const assigned = assignedDrivers(plan);
   const spots = clientSpots();
+  const forecast = forecastFor(planDate, store.getOrders());
+  const forecastTag = (c) => {
+    const k = forecast.clients.get(c.id);
+    return forecast.days >= MIN_WEEKS && k ? ` <span class="tag forecast" title="${esc(t('Ordered {k} of the last {n} times on this weekday', { k, n: forecast.days }))}">📈 ${k}/${forecast.days}</span>` : '';
+  };
+  $('#forecast-note').textContent =
+    settings.forecast === false
+      ? ''
+      : forecast.days >= MIN_WEEKS
+        ? t('📈 Forecast for {day}: {n} clients ordered on at least half of the last {weeks} same weekdays and are checked on a new day. 📈 3/4 = ordered 3 of the last 4 times.', { n: clients.filter((c) => isLikely(forecast, c.id)).length, weeks: forecast.days, day: DAYS[weekday] })
+        : t('📈 The order forecast for {day} starts after 2 weeks of routes on that weekday; until then the usual days are used.', { day: DAYS[weekday] });
   // On a route: that driver, in the route's colour. Otherwise: who usually takes them.
   const driverTag = (c) => {
     const on = assigned.get(c.id);
@@ -543,7 +573,7 @@ function renderStops() {
       const s = day.selected[c.id];
       return `<tr data-id="${esc(c.id)}" class="${s ? 'selected' : ''}">
         <td class="pick"><input type="checkbox" data-f="on" ${s ? 'checked' : ''} aria-label="${esc(c.name)}" /></td>
-        <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ` <span class="tag good">${t('regular today')}</span>` : ''}${c.dayHours?.[weekday] ? ` <span class="tag prio">⏰ ${esc(hoursText(hoursOn(c, weekday)))}</span>` : ''}${s?.qb?.length ? ` <span class="tag invoice">🧾 ${s.qb.map((r) => '#' + esc(r)).join(' ')}</span>` : ''}${driverTag(c)}${locationTag(c, spots)}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</div></td>
+        <td class="name">${esc(c.name)}${isScheduled(c, weekday) ? ` <span class="tag good">${t('regular today')}</span>` : ''}${forecastTag(c)}${c.dayHours?.[weekday] ? ` <span class="tag prio">⏰ ${esc(hoursText(hoursOn(c, weekday)))}</span>` : ''}${s?.qb?.length ? ` <span class="tag invoice">🧾 ${s.qb.map((r) => '#' + esc(r)).join(' ')}</span>` : ''}${driverTag(c)}${locationTag(c, spots)}<div class="addr">${esc(c.address)}${hasLoc(c) ? '' : ` <span class="warn-text">⚠ ${t('not located')}</span>`}</div></td>
         <td class="drv"${label('Driver')}>${driverPick(c, s)}</td>
         <td class="small"${label('Usual days')}>${esc(daysText(c.days))}</td>
         <td class="small"${label('Unload')}>${unloadText(c)}</td>
@@ -673,8 +703,7 @@ function renameDriver(i, name) {
 
 $('#stop-search').addEventListener('input', renderStops);
 $('#btn-select-scheduled').addEventListener('click', () => {
-  const weekday = weekdayOf(planDate);
-  const added = clients.filter((c) => isScheduled(c, weekday) && !day.selected[c.id]);
+  const added = expectedClients(planDate).filter((c) => !day.selected[c.id]);
   for (const c of added) day.selected[c.id] = newSelection();
   saveDay();
   renderStops();
@@ -848,6 +877,7 @@ function savePlan() {
     if (r.order.length) routes[driverName(i)] = routePayload(r, i);
   });
   store.saveRoutesDay(plan.date, routes, plan.best);
+  store.saveOrdersDay(plan.date, plan.stops.map((s) => s.id));
   // Real return times (from the truck or typed in History) are kept when the plan changes.
   const before = store.getHistory()[plan.date]?.drivers || [];
   const drivers = ev.routes
@@ -1321,6 +1351,7 @@ function removeFromPlan(id) {
 function clearPlan() {
   store.savePlan({ date: plan.date, deleted: true });
   store.saveRoutesDay(plan.date, {});
+  store.saveOrdersDay(plan.date, []);
   plan = null;
   suggestion = null;
   renderResults();
@@ -2142,6 +2173,7 @@ const NUMERIC = new Set(['depotLat', 'depotLng', 'payRate', 'regularHoursPerDay'
 const DEPOT_LOC = ['depotAddress', 'depotLat', 'depotLng'];
 
 function renderSettings() {
+  sform.elements.forecast.checked = settings.forecast !== false;
   $('#learn-line').textContent = isLearning(localDate())
     ? t('Learning now (since {from}): routes are planned the cheapest way each day, and each area keeps the same driver from day to day. After {until}, each client stays with the driver they had most often.', { from: fmtDateLong(settings.learnFrom || localDate()), until: fmtDateLong(settings.learnUntil) })
     : t('Usual drivers are learned from routes since {from}. Pick a date above to plan freely and learn again until then.', { from: settings.learnFrom ? fmtDateLong(settings.learnFrom) : '—' });
@@ -2185,6 +2217,7 @@ sform.addEventListener('submit', async (e) => {
   }
   // A learning period set after the last one ended starts learning afresh from today.
   if (el.learnUntil.value && el.learnUntil.value !== settings.learnUntil && !isLearning(localDate())) settings.learnFrom = localDate();
+  settings.forecast = el.forecast.checked;
   for (const f of SETTING_FIELDS) {
     const v = el[f].value;
     settings[f] = NUMERIC.has(f) ? (v === '' ? (f.startsWith('depot') ? null : store.DEFAULT_SETTINGS[f]) : Number(v)) : v;
@@ -2785,6 +2818,7 @@ async function enterApp(user) {
   clients = store.getClients();
   if (user.role === 'driver') return showTab('driver');
   renderPlanControls();
+  seedOrders();
   loadDay(planDate);
   applyQuickBooks();
   readPastTruckDays().then(() => currentTab() === 'clients' && renderClients());

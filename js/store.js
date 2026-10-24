@@ -60,6 +60,7 @@ export const DEFAULT_SETTINGS = {
   routeArea: 'some', // keep each driver in one part of town: off / some / strong (see AREA in app.js)
   trucks: {}, // driver name -> Geotab device id
   geotabRadius: 200,
+  forecast: true, // check the clients likely to order (from past orders) on a new day
   learnStops: true, // plan with real stop times from the trucks once a client has enough visits
 };
 
@@ -133,6 +134,16 @@ export function getDay(date) {
 }
 export function saveDay(date, day) {
   write('days', keepLast({ ...getDays(), [date]: { ...day, updated: Date.now() } }, 14));
+  changed();
+}
+
+// Clients who got a delivery each day, for the order forecast (see forecast.js):
+// { "2026-10-21": { updated, ids: [clientId, ...] } }, about four months.
+export function getOrders() {
+  return read('orders', {});
+}
+export function saveOrdersDay(date, ids) {
+  write('orders', keepLast({ ...getOrders(), [date]: { updated: Date.now(), ids } }, 120));
   changed();
 }
 
@@ -252,6 +263,7 @@ export function exportSyncData() {
     done: getDone(),
     days: getDays(),
     plans: getPlans(),
+    orders: getOrders(),
   };
 }
 // Writes merged data without announcing a change (that would start another sync).
@@ -269,6 +281,7 @@ export function importSyncData(data) {
   write('done', data.done || {});
   write('days', data.days || {});
   write('plans', data.plans || {});
+  write('orders', data.orders || {});
 }
 
 // Drivers only receive their own routes.
