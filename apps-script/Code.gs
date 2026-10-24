@@ -38,6 +38,7 @@ function doPost(e) {
   try {
     return reply(handle(req));
   } catch (err) {
+    console.error(req.action, err); // shows in Apps Script → Executions
     return reply({ error: String((err && err.message) || err) });
   }
 }
@@ -622,13 +623,17 @@ function readJson(name) {
   return text ? JSON.parse(text) : null;
 }
 
+// The new copy is written over the old one first, and leftover rows are cleared only after that,
+// so a save that fails part way never leaves the sheet empty.
 function writeJson(name, value) {
   const text = JSON.stringify(value);
   const pieces = [];
   for (let i = 0; i < text.length; i += 45000) pieces.push(['x' + text.slice(i, i + 45000)]);
   const sh = sheet(name);
-  sh.clearContents();
+  const before = sh.getLastRow();
+  if (sh.getMaxRows() < pieces.length) sh.insertRowsAfter(sh.getMaxRows(), pieces.length - sh.getMaxRows());
   if (pieces.length) sh.getRange(1, 1, pieces.length, 1).setValues(pieces);
+  if (before > pieces.length) sh.getRange(pieces.length + 1, 1, before - pieces.length, 1).clearContent();
 }
 
 function load() {

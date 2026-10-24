@@ -318,3 +318,26 @@ test('daily backups: kept for 14 days, listed and restored by an admin', () => {
   assert.equal(s.call({ action: 'pull', token: admin }).data.clients.length, 6 + 9);
   assert.match(s.call({ action: 'restoreBackup', token: admin, date: '2025-01-01' }).error, /No backup/);
 });
+
+test('a save that fails part way leaves the old data in place', () => {
+  const { s, sec } = setupServer();
+  const many = { ...DATA, clients: Array.from({ length: 10 }, (_, i) => ({ id: 'c' + i, name: 'C' + i })) };
+  s.call({ action: 'push', token: sec, data: many });
+  s.failNextWrites(1);
+  const more = { ...many, clients: [...many.clients, { id: 'new', name: 'New' }] };
+  assert.match(s.call({ action: 'push', token: sec, data: more }).error, /Service error/);
+  assert.equal(s.call({ action: 'pull', token: sec }).data.clients.length, 10, 'still the old copy, not empty');
+  assert.equal(s.call({ action: 'push', token: sec, data: more }).ok, true);
+  assert.equal(s.call({ action: 'pull', token: sec }).data.clients.length, 11);
+});
+
+test('a smaller copy replaces a bigger one cleanly, and a big one grows the sheet', () => {
+  const { s, sec } = setupServer();
+  const big = { ...DATA, history: Object.fromEntries(Array.from({ length: 4000 }, (_, i) => ['d' + i, { note: 'x'.repeat(30) }])) };
+  assert.equal(s.call({ action: 'push', token: sec, data: big }).ok, true);
+  const pulled = s.call({ action: 'pull', token: sec }).data;
+  assert.equal(Object.keys(pulled.history).length, 4000);
+  const small = { ...big, history: Object.fromEntries(Object.entries(big.history).slice(0, 3000)) };
+  assert.equal(s.call({ action: 'push', token: sec, data: small }).ok, true);
+  assert.equal(Object.keys(s.call({ action: 'pull', token: sec }).data.history).length, 3000);
+});

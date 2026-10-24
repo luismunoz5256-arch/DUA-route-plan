@@ -11,15 +11,35 @@ exports.createServer = function createServer({ setupCode = 'test-setup-code', ge
   const properties = new Map();
   let today = null; // setToday('2026-10-21') pretends it's that day (for daily backups)
 
+  // failWrites: make the next N setValues calls throw, like Google failing part way through a save.
+  let failWrites = 0;
   function fakeSheet(name) {
     let rows = [];
+    let maxRows = 1000;
+    const lastRow = () => {
+      let n = rows.length;
+      while (n && (rows[n - 1] === '' || rows[n - 1] == null)) n--;
+      return n;
+    };
     return {
       getName: () => name,
-      getLastRow: () => rows.length,
+      getLastRow: lastRow,
+      getMaxRows: () => maxRows,
+      insertRowsAfter: (after, n) => (maxRows += n),
       clearContents: () => (rows = []),
       getRange: (r, c, n) => ({
         getValues: () => rows.slice(r - 1, r - 1 + n).map((v) => [v]),
-        setValues: (vals) => vals.forEach((v, i) => (rows[r - 1 + i] = v[0])),
+        setValues: (vals) => {
+          if (r - 1 + vals.length > maxRows) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
+          if (failWrites > 0) {
+            failWrites--;
+            throw new Error('Service error: Spreadsheets');
+          }
+          vals.forEach((v, i) => (rows[r - 1 + i] = v[0]));
+        },
+        clearContent: () => {
+          for (let i = r - 1; i < r - 1 + n; i++) rows[i] = '';
+        },
       }),
     };
   }
@@ -70,6 +90,7 @@ exports.createServer = function createServer({ setupCode = 'test-setup-code', ge
         return { getContentText: () => JSON.stringify(body), getResponseCode: () => 200 };
       },
     },
+    console: { error() {}, log() {} },
     ContentService: {
       MimeType: { JSON: 'json' },
       createTextOutput: (text) => ({ setMimeType: () => ({ text }) }),
@@ -84,6 +105,9 @@ exports.createServer = function createServer({ setupCode = 'test-setup-code', ge
   return {
     setToday(d) {
       today = d;
+    },
+    failNextWrites(n) {
+      failWrites = n;
     },
     sheetNames: () => [...sheets.keys()],
     call(req) {
