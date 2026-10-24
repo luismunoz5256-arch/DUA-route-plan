@@ -1,6 +1,9 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "Getting afternoon traffic times": "Obteniendo tiempos con tráfico de la tarde",
+  "Drive times from Google with typical traffic around {time}, and around {time2} for driving after {after}.": "Tiempos de manejo de Google con el tráfico típico de las {time}, y de las {time2} para manejar después de las {after}.",
+  "Afternoon traffic sample time (blank = off)": "Hora de muestra del tráfico de la tarde (en blanco = no usar)",
   "Loaded on the truck": "Cargada en el camión",
   "Loaded": "Cargadas",
   "Loading order: load the last stop first": "Orden de carga: cargue primero la última parada",

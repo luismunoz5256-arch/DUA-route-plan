@@ -3,7 +3,7 @@
 // Deleted clients leave a tombstone so the delete spreads to other computers.
 //
 // Shape: { clients: [], deletedClients: {id: time}, history: {date: entry},
-//          matrix: {pair: [min, meters]}, settings: {}, settingsUpdated: time,
+//          matrix / matrix2: {pair: [min, meters]} (midday / afternoon), settings: {}, settingsUpdated: time,
 //          routes: {date: {updated, drivers}}, done: {date: {driver: {stopId: time}}},
 //          days: {date: {updated, selected, ...}}, plans: {date: {updated, ...plan}} }
 // `done` belongs to the server (drivers tick stops there), so b's copy wins when a is local.
@@ -39,6 +39,7 @@ export function mergeData(a, b) {
     deletedClients,
     history,
     matrix: { ...(b.matrix || {}), ...(a.matrix || {}) },
+    matrix2: { ...(b.matrix2 || {}), ...(a.matrix2 || {}) },
     settings: aNewer ? a.settings : b.settings,
     settingsUpdated: Math.max(a.settingsUpdated || 0, b.settingsUpdated || 0),
     routes,

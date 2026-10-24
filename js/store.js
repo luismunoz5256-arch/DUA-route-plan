@@ -50,6 +50,7 @@ export const DEFAULT_SETTINGS = {
   learnFrom: '2026-10-21',
   learnUntil: '2026-10-31',
   trafficTime: '12:30',
+  trafficTime2: '16:00', // afternoon traffic sample for driving later in the day ('' = off)
   monthlyElementLimit: 4000,
   monthlyGeocodeLimit: 2000,
   monthlyPathLimit: 1500, // road shapes drawn on the route map (one per route)
@@ -106,12 +107,13 @@ export function saveClients(list) {
   if (any) changed();
 }
 
-// Drive-time cache: { "lat,lng|lat,lng": [minutes, meters] }
-export function getMatrixCache() {
-  return read('matrix', {});
+// Drive-time cache: { "lat,lng|lat,lng": [minutes, meters] } with midday traffic (matrix) and
+// with afternoon traffic (matrix2).
+export function getMatrixCache(afternoon = false) {
+  return read(afternoon ? 'matrix2' : 'matrix', {});
 }
-export function saveMatrixCache(m) {
-  write('matrix', m);
+export function saveMatrixCache(m, afternoon = false) {
+  write(afternoon ? 'matrix2' : 'matrix', m);
   changed();
 }
 
@@ -243,6 +245,7 @@ export function exportSyncData() {
     deletedClients: read('deletedClients', {}),
     history: getHistory(),
     matrix: getMatrixCache(),
+    matrix2: getMatrixCache(true),
     settings: sharedPart(getSettings()),
     settingsUpdated: read('settingsUpdated', 0),
     routes: getRoutes(),
@@ -261,6 +264,7 @@ export function importSyncData(data) {
   write('deletedClients', data.deletedClients || {});
   write('history', data.history || {});
   write('matrix', data.matrix || {});
+  write('matrix2', data.matrix2 || {});
   write('routes', data.routes || {});
   write('done', data.done || {});
   write('days', data.days || {});

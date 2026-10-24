@@ -2,6 +2,8 @@
 //
 // Problem shape (all times in minutes after midnight; index 0 is the warehouse, stops are 1..n):
 //   time[i][j]   drive minutes from i to j
+//   time2[i][j]  drive minutes later in the day (afternoon traffic), used for legs starting at or
+//                after switchAt; optional
 //   dist[i][j]   miles from i to j (optional, for fuel cost)
 //   service[i]   unload minutes at stop i
 //   open[i]      earliest arrival or null
@@ -46,6 +48,8 @@ export function makeRng(seed) {
 const shiftStartOf = (p) => p.shiftStart ?? p.start;
 const otAtOf = (p, r) => (p.otAt && p.otAt[r] != null ? p.otAt[r] : Infinity);
 const miles = (p, i, j) => (p.dist ? p.dist[i][j] : 0);
+// Drive minutes from i to j when leaving at minute t: afternoon traffic once it's late enough.
+const legTime = (p, t, i, j) => (p.time2 && t >= p.switchAt ? p.time2 : p.time)[i][j];
 
 // Full timeline of one route (driven by driver r), used for display and pay.
 export function simulateRoute(route, p, r = 0) {
@@ -57,7 +61,7 @@ export function simulateRoute(route, p, r = 0) {
   let late = 0;
   const stops = [];
   for (const i of route) {
-    const leg = p.time[prev][i];
+    const leg = legTime(p, t, prev, i);
     t += leg;
     drive += leg;
     dist += miles(p, prev, i);
@@ -73,7 +77,7 @@ export function simulateRoute(route, p, r = 0) {
   }
   let returnDrive = 0;
   if (route.length) {
-    returnDrive = p.time[prev][0];
+    returnDrive = legTime(p, t, prev, 0);
     t += returnDrive;
     drive += returnDrive;
     dist += miles(p, prev, 0);
@@ -125,7 +129,7 @@ function routeEval(route, p, w, ins, pos, out, r) {
     }
     if (p.lock && p.lock[i] != null && p.lock[i] !== r) off += LOCKED;
     else if (p.home && p.home[i] != null && p.home[i] !== r) off += p.away || 0;
-    t += p.time[prev][i];
+    t += legTime(p, t, prev, i);
     if (p.dist) dist += p.dist[prev][i];
     const o = p.open[i];
     if (o != null && t < o) t = o;
@@ -134,7 +138,7 @@ function routeEval(route, p, w, ins, pos, out, r) {
     t += p.service[i];
     prev = i;
   }
-  t += p.time[prev][0];
+  t += legTime(p, t, prev, 0);
   if (p.dist) dist += p.dist[prev][0];
   const pastEnd = t > p.endBy ? t - p.endBy : 0;
   const otAt = otAtOf(p, r);

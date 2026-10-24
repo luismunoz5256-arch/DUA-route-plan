@@ -253,8 +253,9 @@ async function locateClients(list, progress) {
 }
 
 // Make sure traffic drive times exist for these points (looked up once, then saved).
-async function ensureDriveTimes(points, status) {
-  const cache = store.getMatrixCache();
+// afternoon = the second traffic sample (settings.trafficTime2), for driving later in the day.
+async function ensureDriveTimes(points, status, afternoon = false) {
+  const cache = store.getMatrixCache(afternoon);
   const need = missingPlan(points, cache);
   if (!need.elements || !settings.apiKey) return cache;
   const left = Math.max(0, settings.monthlyElementLimit - store.getUsage().elements);
@@ -262,17 +263,20 @@ async function ensureDriveTimes(points, status) {
     return cache;
   }
   try {
-    await fillMissing(need, cache, settings.apiKey, nextTrafficDeparture(settings.trafficTime), {
-      onStatus: (s) => status(t('Getting traffic times') + ' ' + s),
+    await fillMissing(need, cache, settings.apiKey, nextTrafficDeparture(afternoon ? settings.trafficTime2 : settings.trafficTime), {
+      onStatus: (s) => status((afternoon ? t('Getting afternoon traffic times') : t('Getting traffic times')) + ' ' + s),
       onElements: (n) => store.addUsage('elements', n),
     });
   } catch (err) {
     alert(err.message + '\n\n' + t('Rough estimates will be used for the missing drive times.'));
   } finally {
-    store.saveMatrixCache(cache);
+    store.saveMatrixCache(cache, afternoon);
   }
   return cache;
 }
+
+// When afternoon traffic takes over: halfway between the two traffic samples.
+const afternoonFrom = () => (settings.trafficTime2 ? Math.round((toMin(settings.trafficTime) + toMin(settings.trafficTime2)) / 2) : null);
 
 // ---------- App updates ----------
 
@@ -374,6 +378,7 @@ function problemFor(p, k) {
     shiftStart: p.shiftStart,
     start: p.start,
     endBy: p.endBy,
+    switchAt: p.switchAt,
     otAt: p.otAt.slice(0, k),
     fuelPerMile: p.payRate ? p.fuelPerMile / perMinute : 0,
     vehicles: k,
@@ -711,7 +716,9 @@ async function tablesFor(depot, stops, status) {
   const points = [depot, ...stops.map((s) => ({ lat: s.lat, lng: s.lng }))];
   const cache = await ensureDriveTimes(points, status);
   const m = assemble(points, cache);
-  return { time: m.time, dist: m.meters.map((row) => row.map((x) => x / 1609.34)), source: { google: m.fromGoogle, estimated: m.estimated } };
+  // Afternoon traffic, for legs driven later in the day (midday times where none is saved yet).
+  const time2 = settings.trafficTime2 && settings.apiKey ? assemble(points, await ensureDriveTimes(points, status, true), cache).time : null;
+  return { time: m.time, ...(time2 ? { time2 } : {}), dist: m.meters.map((row) => row.map((x) => x / 1609.34)), source: { google: m.fromGoogle, estimated: m.estimated } };
 }
 
 async function buildRoutes() {
@@ -764,13 +771,15 @@ async function buildRoutes() {
         stops,
         problem: {
           time: tables.time,
+          ...(tables.time2 ? { time2: tables.time2 } : {}),
           dist: tables.dist,
           service: [0, ...stops.map((s) => s.unload)],
           open: [null, ...stops.map((s) => s.open)],
           due: [null, ...stops.map((s) => s.due)],
         },
         options: [],
-        source: { ...tables.source, trafficTime: settings.trafficTime },
+        source: { ...tables.source, trafficTime: settings.trafficTime, ...(tables.time2 ? { trafficTime2: settings.trafficTime2 } : {}) },
+        switchAt: tables.time2 ? afternoonFrom() : null,
       };
 
       const k = settings.driverCount;
@@ -947,7 +956,9 @@ function renderResults() {
   $('#data-note').innerHTML =
     (src.estimated
       ? `<span class="warn-text">⚠ ${t('{n} of {total} drive times are rough straight-line estimates. Times may be off.', { n: src.estimated, total: src.google + src.estimated })}</span>`
-      : t('Drive times from Google with typical traffic around {time}.', { time: fmtTime(toMin(src.trafficTime)) })) +
+      : src.trafficTime2
+        ? t('Drive times from Google with typical traffic around {time}, and around {time2} for driving after {after}.', { time: fmtTime(toMin(src.trafficTime)), time2: fmtTime(toMin(src.trafficTime2)), after: fmtTime(plan.switchAt) })
+        : t('Drive times from Google with typical traffic around {time}.', { time: fmtTime(toMin(src.trafficTime)) })) +
     (impossible.length ? `<br><span class="warn-text">⚠ ${esc(t("Can't be on time even as a driver's first stop: {list}. Change the deliver-by time, or leave the warehouse earlier.", { list: impossible.join(', ') }))}</span>` : '');
 
   const ev = viewEv;
@@ -1265,6 +1276,7 @@ function addToPlan(id) {
     plan.stops = stops;
     plan.problem = {
       time: tables.time,
+      ...(tables.time2 ? { time2: tables.time2 } : {}),
       dist: tables.dist,
       service: [...plan.problem.service, stop.unload],
       open: [...plan.problem.open, stop.open],
@@ -2124,7 +2136,7 @@ const sform = $('#settings-form');
 const SETTING_FIELDS = [
   'depotName', 'depotAddress', 'depotLat', 'depotLng', 'shiftStart', 'start', 'latestReturn', 'payRate',
   'regularHoursPerDay', 'regularHoursPerWeek', 'fuelPerMile', 'defaultUnload', 'priorityBy', 'apiKey',
-  'trafficTime', 'monthlyElementLimit', 'monthlyGeocodeLimit', 'orderCutoff', 'keepWithDriver', 'learnUntil',
+  'trafficTime', 'trafficTime2', 'monthlyElementLimit', 'monthlyGeocodeLimit', 'orderCutoff', 'keepWithDriver', 'learnUntil',
 ];
 const NUMERIC = new Set(['depotLat', 'depotLng', 'payRate', 'regularHoursPerDay', 'regularHoursPerWeek', 'fuelPerMile', 'defaultUnload', 'monthlyElementLimit', 'monthlyGeocodeLimit', 'keepWithDriver']);
 const DEPOT_LOC = ['depotAddress', 'depotLat', 'depotLng'];
@@ -2143,7 +2155,7 @@ function renderSettings() {
     g: u.geocodes,
     gl: settings.monthlyGeocodeLimit,
   });
-  $('#matrix-line').textContent = t('{n} drive times saved. Daily planning reuses them, so it normally makes no Google requests.', { n: Object.keys(store.getMatrixCache()).length });
+  $('#matrix-line').textContent = t('{n} drive times saved. Daily planning reuses them, so it normally makes no Google requests.', { n: Object.keys(store.getMatrixCache()).length + Object.keys(store.getMatrixCache(true)).length });
   const sync = store.getSyncState();
   $('#sync-line').innerHTML = sync.error
     ? `<span class="bad-text">${t('Last save to the Google Sheet failed:')} ${esc(sync.error)}</span>`
@@ -2193,11 +2205,12 @@ $('#btn-preload').addEventListener('click', (e) => {
   const depot = depotPoint();
   if (!depot) return alert(t('Set the warehouse location first.'));
   const points = [depot, ...clients.filter((c) => c.active !== false && hasLoc(c)).map((c) => ({ lat: Number(c.lat), lng: Number(c.lng) }))];
-  const need = missingPlan(points, store.getMatrixCache());
-  if (!need.elements) return alert(t('All drive times are already saved.'));
-  if (!confirm(t('This looks up {n} drive times (this month so far: {used} of your {limit} limit). Continue?', { n: need.elements, used: store.getUsage().elements, limit: settings.monthlyElementLimit }))) return;
+  const n = missingPlan(points, store.getMatrixCache()).elements + (settings.trafficTime2 ? missingPlan(points, store.getMatrixCache(true)).elements : 0);
+  if (!n) return alert(t('All drive times are already saved.'));
+  if (!confirm(t('This looks up {n} drive times (this month so far: {used} of your {limit} limit). Continue?', { n, used: store.getUsage().elements, limit: settings.monthlyElementLimit }))) return;
   busy(e.target, async (status) => {
     await ensureDriveTimes(points, status);
+    if (settings.trafficTime2) await ensureDriveTimes(points, status, true);
     renderSettings();
   });
 });
@@ -2205,6 +2218,7 @@ $('#btn-preload').addEventListener('click', (e) => {
 $('#btn-clear-matrix').addEventListener('click', () => {
   if (!confirm(t('Forget all saved drive times? They will be looked up again from Google (using your free monthly amount) the next time you plan.'))) return;
   store.saveMatrixCache({});
+  store.saveMatrixCache({}, true);
   renderSettings();
 });
 

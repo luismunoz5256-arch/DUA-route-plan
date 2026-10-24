@@ -64,3 +64,8 @@ test('picked stops and plans merge by date, newest wins', () => {
   assert.ok(m.days.d2);
   assert.equal(m.plans.d1.k, 'new');
 });
+
+test('afternoon drive times merge like midday ones', () => {
+  const m = mergeData({ ...base, matrix2: { 'a|b': [5, 1] } }, { ...base, matrix2: { 'a|c': [7, 2] } });
+  assert.deepEqual(Object.keys(m.matrix2).sort(), ['a|b', 'a|c']);
+});

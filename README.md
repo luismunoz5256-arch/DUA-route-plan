@@ -58,7 +58,7 @@ Drivers should add it from the **login page**, not from a route link they were t
 
 Google uses traffic data to give real drive times. Google asks for a card, but the planner is built to stay inside the free amounts:
 
-- Drive times between your clients are looked up **once** (using typical traffic at 12:30 PM on a weekday) and **saved**. Planning a normal day then makes **no Google requests at all**. Adding a new client only looks up that client's times.
+- Drive times between your clients are looked up **once** (using typical traffic at 12:30 PM on a weekday, and again at 4:00 PM for driving later in the day) and **saved**. The afternoon times are used for any driving that starts after the halfway point (2:15 PM), so return times reflect the afternoon traffic. Each pair of places is looked up once for each time, so the first weeks use about twice as many lookups as before; leave **Afternoon traffic sample time** blank in Settings to switch it off. Planning a normal day then makes **no Google requests at all**. Adding a new client only looks up that client's times.
 - The planner counts its own lookups and stops at the monthly limits in **Settings** (default 4,000 drive times and 2,000 address lookups). It asks before going over.
 
 Google's free amounts change from time to time. Check the current numbers at <https://mapsplatform.google.com/pricing/>. Traffic-aware drive-time lookups are the "Compute Route Matrix" item.

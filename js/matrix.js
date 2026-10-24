@@ -82,8 +82,9 @@ export async function fillMissing(plan, cache, apiKey, departure, { onStatus, on
   return count;
 }
 
-// Square matrix of minutes for `points` (index 0 = warehouse).
-export function assemble(points, cache) {
+// Square matrix of minutes for `points` (index 0 = warehouse). Pairs missing from `cache` come
+// from `fallback` (e.g. midday times when an afternoon time isn't saved yet), else an estimate.
+export function assemble(points, cache, fallback = {}) {
   const keys = points.map(locKey);
   let fromGoogle = 0;
   let estimated = 0;
@@ -95,7 +96,7 @@ export function assemble(points, cache) {
         meters[i][j] = 0;
         return 0;
       }
-      const hit = cache[`${keys[i]}|${keys[j]}`];
+      const hit = cache[`${keys[i]}|${keys[j]}`] || fallback[`${keys[i]}|${keys[j]}`];
       if (hit) {
         fromGoogle++;
         meters[i][j] = hit[1];

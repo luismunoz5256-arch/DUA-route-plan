@@ -206,3 +206,22 @@ test('the area goal costs little on an ordinary day', () => {
   const compact = solve({ ...p, px: pts.map((q) => q[0]), py: pts.map((q) => q[1]), compact: 0.5 }, { timeLimitMs: 400 });
   assert.ok(compact.totalMinutes <= plain.totalMinutes * 1.05, `${compact.totalMinutes} vs ${plain.totalMinutes}`);
 });
+
+test('legs driven later in the day use the afternoon traffic times', () => {
+  const p = makeProblem({ n: 4, vehicles: 1 });
+  const slow = p.time.map((row) => row.map((x) => x * 2));
+  const route = [1, 2, 3, 4];
+  const midday = simulateRoute(route, p);
+  // afternoon traffic from 1:00 PM: the legs after that take twice as long
+  const after = simulateRoute(route, { ...p, time2: slow, switchAt: 13 * 60 });
+  assert.ok(after.finish > midday.finish);
+  after.stops.forEach((s, k) => {
+    const leaving = k ? after.stops[k - 1].depart : p.start;
+    assert.equal(s.drive, (leaving >= 13 * 60 ? slow : p.time)[k ? route[k - 1] : 0][route[k]]);
+  });
+  // never before the switch time
+  assert.deepEqual(simulateRoute(route, { ...p, time2: slow, switchAt: 24 * 60 }).finish, midday.finish);
+  // and the optimizer sees the same times
+  const r = solve({ ...p, time2: slow, switchAt: 13 * 60 }, { timeLimitMs: 100 });
+  assert.equal(Math.round(r.routes[0].finish), Math.round(simulateRoute(r.routes[0].order, { ...p, time2: slow, switchAt: 13 * 60 }).finish));
+});
