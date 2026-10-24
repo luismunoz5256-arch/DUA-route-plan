@@ -325,6 +325,12 @@ body[data-role='driver'] main { padding: 0; }
   dialog .row.end button { flex: 1; }
 }
 
+.print-only { display: none; }
+.loading-list h4 { margin: 0.8rem 0 0.3rem; font-size: 0.95rem; }
+.loading-list ol { list-style: none; padding: 0; margin: 0; columns: 2; }
+.loading-list li { padding: 0.15rem 0; font-size: 0.9rem; display: flex; gap: 0.4rem; align-items: center; }
+.loading-list .box { width: 0.9rem; height: 0.9rem; border: 1.5px solid #333; border-radius: 2px; flex: none; }
+
 @media print {
   .topbar, .banner, #tab-plan > .card, #tab-plan > .row, #results > .card, .noprint, .driver .actions, .driver li .edit { display: none !important; }
   body { background: #fff; }
@@ -333,4 +339,5 @@ body[data-role='driver'] main { padding: 0; }
   .cards { display: block; }
   .driver { break-after: page; border: 0; border-top: 6px solid var(--route); }
   .driver li { break-inside: avoid; }
+  .print-only { display: block; }
 }

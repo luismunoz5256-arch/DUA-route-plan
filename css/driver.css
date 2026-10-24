@@ -35,6 +35,11 @@ body:has(> .route-view) { margin: 0; background: #f4f6f3; }
 .route-view .btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .route-view .btns a, .route-view .btns button { flex: 1; min-width: 120px; text-align: center; font: inherit; font-weight: 600; padding: 10px; border-radius: 10px; border: 1px solid #c6cec8; background: #fff; color: #1d2420; text-decoration: none; cursor: pointer; }
 .route-view .btns a.go { background: var(--brand); color: #fff; border-color: var(--brand); }
+.route-view .view-switch { display: flex; gap: 6px; background: #e3e9e4; padding: 4px; border-radius: 12px; }
+.route-view .view-switch button { flex: 1; font: inherit; font-weight: 600; padding: 10px; border: 0; border-radius: 9px; background: transparent; color: #1d2420; cursor: pointer; }
+.route-view .view-switch button.on { background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15); }
+.route-view .muted-tag { display: inline-block; font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+.route-view .btns button.go { background: var(--brand); color: #fff; border-color: var(--brand); }
 .route-view .foot { font-size: 0.85rem; color: var(--muted); }
 .route-view .error { padding: 24px; }
 .route-view.lang-row { padding-bottom: 0; align-items: flex-end; }

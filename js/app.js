@@ -7,7 +7,7 @@ import { encodeRoute } from './share.js';
 import { initSync, syncNow } from './sync.js';
 import { canonical } from './merge.js';
 import * as api from './api.js';
-import { renderRoute } from './routeview.js';
+import { renderRoute, LOADED } from './routeview.js';
 import { analyzeDay, parseDuration, minuteOfDay } from './tracking.js';
 import { recordStays, learnedStop, MIN_VISITS } from './stays.js';
 import { mapIn, pin, depotPin, fit } from './maps.js';
@@ -1072,6 +1072,7 @@ function driverCard(r, i, k, done) {
       if (s.added) tags.push(`<span class="tag new">${t('Added')}</span>`);
       if (s.driver) tags.push(`<span class="tag" title="${esc(t('Given to this driver by hand'))}">📌</span>`);
       if (done[s.id]) tags.push(`<span class="tag done">✓ ${t('Done {time}', { time: fmtTime(minuteOfDay(done[s.id])) })}</span>`);
+      else if (done[LOADED + s.id]) tags.push(`<span class="tag" title="${esc(t('Loaded on the truck'))}">📦</span>`);
       const notes = [t('Unload {n} min', { n: s.unload }), s.notes, s.today].filter(Boolean).map(esc).join(' · ');
       return `<li><span class="num">${n + 1}</span><span class="time">${fmtTime(a.arrive)}</span>
         <div><div class="who">${esc(s.name)} ${tags.join(' ')}</div><div class="addr">${esc(s.address)}</div><div class="note">${notes}</div></div>
@@ -1096,12 +1097,17 @@ function driverCard(r, i, k, done) {
       <span>${t('Stops')} <b>${r.order.length}</b></span>
       <span>${t('Paid')} <b>${fmtDur(r.paid)}${r.ot >= 0.5 ? ` (${fmtDur(r.ot)} ${t('OT')})` : ''} · ${fmtMoney(r.labor)}</b></span>
       <span>${t('Driving')} <b>${fmtDur(r.drive)} · ${r.miles.toFixed(0)} mi · ${fmtMoney(r.fuel)} ${t('fuel')}</b></span>
+      <span>📦 ${t('Loaded')} <b>${r.order.filter((idx) => done[LOADED + plan.stops[idx - 1].id]).length}/${r.order.length}</b></span>
     </div>
     <ol>
       <li class="depot"><span class="num">W</span><span class="time">${fmtTime(plan.start)}</span><div><div class="who">${t('Leave {place}', { place: esc(plan.depot.name) })}</div></div></li>
       ${rows}
       <li class="depot"><span class="num">W</span><span class="time">${fmtTime(r.finish)}</span><div><div class="who">${t('Back at {place}', { place: esc(plan.depot.name) })}</div></div></li>
     </ol>
+    <div class="print-only loading-list">
+      <h4>${t('Loading order: load the last stop first')}</h4>
+      <ol>${[...r.order].reverse().map((idx) => `<li><span class="box"></span> ${r.order.indexOf(idx) + 1}. ${esc(plan.stops[idx - 1].name)}</li>`).join('')}</ol>
+    </div>
     <div class="actions">
       <a class="btn secondary" href="${esc(phoneLink(r, i))}" target="_blank" rel="noopener">${t('Driver phone page')}</a>
       <button class="secondary" data-copylink="${i}">${t('Copy phone link')}</button>

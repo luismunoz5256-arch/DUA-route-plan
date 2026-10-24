@@ -1,6 +1,16 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "Loaded on the truck": "Cargada en el camión",
+  "Loaded": "Cargadas",
+  "Loading order: load the last stop first": "Orden de carga: cargue primero la última parada",
+  "{n} of {total} loaded": "{n} de {total} cargadas",
+  "Route": "Ruta",
+  "Loading list": "Lista de carga",
+  "Load the last stop first, so the first stop ends up by the door.": "Cargue primero la última parada, así la primera parada queda junto a la puerta.",
+  "load first (back of the truck)": "cargar primero (al fondo del camión)",
+  "load last (by the door)": "cargar al final (junto a la puerta)",
+  "Loaded ✓": "Cargada ✓",
   "{name} (deliver by {by}, earliest {at})": "{name} (entregar antes de {by}, lo más pronto {at})",
   "Can't be on time even as a driver's first stop: {list}. Change the deliver-by time, or leave the warehouse earlier.": "No pueden llegar a tiempo aunque sean la primera parada de un chofer: {list}. Cambie la hora límite o salgan antes de la bodega.",
   "more than 40 km from the warehouse": "a más de 40 km de la bodega",
