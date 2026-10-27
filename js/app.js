@@ -261,7 +261,7 @@ async function ensureDriveTimes(points, status, afternoon = false) {
   const need = missingPlan(points, cache);
   if (!need.elements || !settings.apiKey) return cache;
   const left = Math.max(0, settings.monthlyElementLimit - store.getUsage().elements);
-  if (need.elements > left && !confirm(t('Getting traffic times for {places} new location(s) needs {need} lookups, but only {left} are left under your monthly limit of {limit}.\n\nOK = look them up anyway (may go past Google\'s free amount)\nCancel = use rough estimates for now', { places: need.newKeys.length, need: need.elements, left, limit: settings.monthlyElementLimit }))) {
+  if (need.elements > left && !confirm(t('Getting traffic times for {places} new location(s) needs {need} lookups, but only {left} are left under your monthly limit of {limit}.\n\nOK = look them up anyway (may go past Google\'s free amount)\nCancel = use rough estimates for now', { places: need.places, need: need.elements, left, limit: settings.monthlyElementLimit }))) {
     return cache;
   }
   try {

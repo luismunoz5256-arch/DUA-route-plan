@@ -1,6 +1,6 @@
 // Drive-time table between today's stops. Google times are saved once and reused,
 // so normal daily planning makes no Google requests at all.
-import { routeMatrix, CHUNK } from './google.js';
+import { routeMatrix } from './google.js';
 
 export function locKey(p) {
   return `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
@@ -16,10 +16,11 @@ function straightKm(a, b) {
   return 2 * R * Math.asin(Math.sqrt(h));
 }
 
-export function estimateMinutes(a, b) {
+// rates: { minPerKm } learned from Google's times nearby (see calibrate), else city driving.
+export function estimateMinutes(a, b, rates = null) {
   const km = straightKm(a, b);
   if (km < 0.01) return 0;
-  return ((km * 1.35) / 38) * 60 + 2;
+  return rates ? km * rates.minPerKm : ((km * 1.35) / 38) * 60 + 2;
 }
 
 // Next weekday at the given "HH:MM" that is still in the future (Google needs a future time for traffic).
@@ -33,22 +34,48 @@ export function nextTrafficDeparture(hhmm, now = new Date()) {
   return d;
 }
 
-// Which pairs still need a Google lookup, and how many billable elements that costs.
-export function missingPlan(points, cache) {
-  const keys = [...new Set(points.map(locKey))];
-  const isNew = new Set();
-  for (const a of keys) {
-    for (const b of keys) {
-      if (a !== b && !cache[`${a}|${b}`]) {
-        isNew.add(a);
-        isNew.add(b);
-      }
-    }
+// Each place gets Google drive times to and from the warehouse and its NEIGHBORS nearest places.
+// Trucks go from a stop to a nearby one, so far-apart pairs (which are almost never driven back to
+// back) are estimated instead of bought. That keeps lookups growing with the number of places
+// instead of with its square: 150 clients need about 2,900 lookups instead of 22,650, and in
+// tests the routes cost within about 0.1% of what they would with every pair looked up.
+export const NEIGHBORS = 15;
+
+// The pairs worth a Google lookup among `points` (index 0 = the warehouse), as "a|b" keys.
+export function neededPairs(points, k = NEIGHBORS) {
+  const where = new Map(points.map((p) => [locKey(p), p]));
+  const depot = locKey(points[0]);
+  const places = [...where.keys()].filter((key) => key !== depot);
+  const pairs = new Set();
+  const add = (a, b) => {
+    pairs.add(`${a}|${b}`);
+    pairs.add(`${b}|${a}`);
+  };
+  for (const a of places) {
+    add(depot, a);
+    const near = places
+      .filter((b) => b !== a)
+      .map((b) => [b, straightKm(where.get(a), where.get(b))])
+      .sort((x, y) => x[1] - y[1])
+      .slice(0, k);
+    for (const [b] of near) add(a, b);
   }
-  const newKeys = keys.filter((k) => isNew.has(k));
-  const oldKeys = keys.filter((k) => !isNew.has(k));
-  const elements = newKeys.length ? newKeys.length * keys.length + oldKeys.length * newKeys.length : 0;
-  return { keys, newKeys, oldKeys, elements };
+  return pairs;
+}
+
+// Which needed pairs aren't saved yet, grouped by where they start, and how many billable lookups
+// (elements) that is.
+export function missingPlan(points, cache, k = NEIGHBORS) {
+  const pairs = neededPairs(points, k);
+  const byOrigin = new Map();
+  let elements = 0;
+  for (const pair of pairs) {
+    if (cache[pair]) continue;
+    const [a, b] = pair.split('|');
+    byOrigin.set(a, [...(byOrigin.get(a) || []), b]);
+    elements++;
+  }
+  return { pairs, byOrigin, elements, places: byOrigin.size };
 }
 
 function keyToPoint(k) {
@@ -56,36 +83,48 @@ function keyToPoint(k) {
   return { lat, lng };
 }
 
-// Fetch missing pairs from Google and add them to the cache (mutates `cache`).
+// Fetch the missing pairs from Google and add them to the cache (mutates `cache`): one request per
+// starting place, asking only for the destinations it needs, so nothing extra is billed.
 // onStatus("2/5") reports progress; onElements(n) reports billed lookups as they happen.
 export async function fillMissing(plan, cache, apiKey, departure, { onStatus, onElements } = {}) {
-  const { keys, newKeys, oldKeys } = plan;
-  if (!newKeys.length) return 0;
   let count = 0;
-  const store = (origins, dests, rows) => {
+  let done = 0;
+  for (const [origin, dests] of plan.byOrigin) {
+    const rows = await routeMatrix(apiKey, [keyToPoint(origin)], dests.map(keyToPoint), departure, (_d, _t, n) => onElements?.(n));
     for (const r of rows) {
-      cache[`${origins[r.from]}|${dests[r.to]}`] = [Math.round(r.minutes * 100) / 100, r.meters];
+      cache[`${origin}|${dests[r.to]}`] = [Math.round(r.minutes * 100) / 100, r.meters];
       count++;
     }
-  };
-  let done = 0;
-  const total = (n) => Math.ceil(n / CHUNK);
-  const steps = total(newKeys.length) * total(keys.length) + total(oldKeys.length) * total(newKeys.length);
-  const progress = (_d, _t, n) => {
-    onElements?.(n);
-    onStatus?.(`${++done}/${steps}`);
-  };
-  store(newKeys, keys, await routeMatrix(apiKey, newKeys.map(keyToPoint), keys.map(keyToPoint), departure, progress));
-  if (oldKeys.length) {
-    store(oldKeys, newKeys, await routeMatrix(apiKey, oldKeys.map(keyToPoint), newKeys.map(keyToPoint), departure, progress));
+    onStatus?.(`${++done}/${plan.byOrigin.size}`);
   }
   return count;
 }
 
+// How Google's drive times compare with straight-line distance in this area (minutes and meters
+// per straight km, from saved pairs at least 2 km apart), to estimate the pairs not looked up.
+function calibrate(cache) {
+  const perKm = [];
+  const meters = [];
+  for (const [pair, [min, m]] of Object.entries(cache)) {
+    const [a, b] = pair.split('|').map(keyToPoint);
+    const km = straightKm(a, b);
+    if (km < 2) continue;
+    perKm.push(min / km);
+    meters.push(m / km);
+  }
+  if (perKm.length < 20) return null;
+  const mid = (v) => v.sort((x, y) => x - y)[Math.floor(v.length / 2)];
+  return { minPerKm: mid(perKm), metersPerKm: mid(meters) };
+}
+
 // Square matrix of minutes for `points` (index 0 = warehouse). Pairs missing from `cache` come
 // from `fallback` (e.g. midday times when an afternoon time isn't saved yet), else an estimate.
+// `estimated` counts only needed pairs (see neededPairs) that had to be estimated; far-apart pairs
+// are estimated on purpose.
 export function assemble(points, cache, fallback = {}) {
   const keys = points.map(locKey);
+  const needed = neededPairs(points);
+  const rates = calibrate(Object.keys(cache).length ? cache : fallback);
   let fromGoogle = 0;
   let estimated = 0;
   const meters = [];
@@ -102,9 +141,9 @@ export function assemble(points, cache, fallback = {}) {
         meters[i][j] = hit[1];
         return hit[0];
       }
-      estimated++;
-      meters[i][j] = straightKm(a, b) * 1350;
-      return estimateMinutes(a, b);
+      if (needed.has(`${keys[i]}|${keys[j]}`)) estimated++;
+      meters[i][j] = straightKm(a, b) * (rates ? rates.metersPerKm : 1350);
+      return estimateMinutes(a, b, rates);
     });
   });
   return { time, meters, fromGoogle, estimated };

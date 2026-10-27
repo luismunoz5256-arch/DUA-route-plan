@@ -25,6 +25,7 @@ export async function geocode(apiKey, address) {
 
 const MATRIX_URL = 'https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix';
 export const CHUNK = 10; // 10 x 10 = 100 elements per request, well under Google's per-request limit
+const MAX_ELEMENTS = 100;
 
 function waypoint(p) {
   return { waypoint: { location: { latLng: { latitude: p.lat, longitude: p.lng } } } };
@@ -35,12 +36,15 @@ function waypoint(p) {
 // onProgress(done, total, elementsBilled) runs after each request.
 export async function routeMatrix(apiKey, origins, destinations, departureTime, onProgress) {
   const out = [];
-  const total = Math.ceil(origins.length / CHUNK) * Math.ceil(destinations.length / CHUNK);
+  // Fewer origins per request leave room for more destinations (one origin: up to 100 at once).
+  const oStep = Math.min(CHUNK, origins.length) || 1;
+  const dStep = Math.floor(MAX_ELEMENTS / oStep);
+  const total = Math.ceil(origins.length / oStep) * Math.ceil(destinations.length / dStep);
   let done = 0;
-  for (let oi = 0; oi < origins.length; oi += CHUNK) {
-    for (let di = 0; di < destinations.length; di += CHUNK) {
-      const o = origins.slice(oi, oi + CHUNK);
-      const d = destinations.slice(di, di + CHUNK);
+  for (let oi = 0; oi < origins.length; oi += oStep) {
+    for (let di = 0; di < destinations.length; di += dStep) {
+      const o = origins.slice(oi, oi + oStep);
+      const d = destinations.slice(di, di + dStep);
       const res = await fetch(MATRIX_URL, {
         method: 'POST',
         headers: {
