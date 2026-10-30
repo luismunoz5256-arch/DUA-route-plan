@@ -238,3 +238,18 @@ test('stops only go to the drivers allowed to take them (driver areas)', () => {
   const out = insertStop([[1, 2], [5, 6], [9]], { ...p, allowed }, 3);
   assert.ok(out[0].includes(3));
 });
+
+test('a stop with a high away cost stays with its home route unless that route would be late', () => {
+  const p = makeProblem({ n: 8, vehicles: 2, seed: 2 });
+  const home = [null, ...Array(8).fill(0)];
+  // a small away cost: the optimizer splits the stops between both drivers to save money
+  const cheap = solve({ ...p, home, away: 1, endBy: 2000 }, { timeLimitMs: 200 });
+  assert.ok(cheap.routes[1].order.length > 0);
+  // a high away cost for these stops (area stops): all stay home while that's on time
+  const awayFor = [null, ...Array(8).fill(180)];
+  const strict = solve({ ...p, home, away: 1, awayFor, endBy: 2000 }, { timeLimitMs: 200, weights: { empty: 0 } });
+  assert.equal(strict.routes[1].order.length, 0);
+  // ...but help still comes when the home driver would be back after the latest return
+  const tight = solve({ ...p, home, away: 1, awayFor, endBy: strict.routes[0].finish - 30 }, { timeLimitMs: 200, weights: { empty: 0 } });
+  assert.ok(tight.routes[1].order.length > 0 && tight.pastEndMinutes < 1);
+});

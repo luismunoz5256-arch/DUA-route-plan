@@ -16,6 +16,7 @@
 //   vehicles     number of drivers
 //   home[i]      usual driver (route index) of stop i, or null; optional
 //   away         cost (minutes of pay) of giving a stop to someone other than its usual driver
+//   awayFor[i]   that cost for stop i when it differs (e.g. stops in a driver's area); optional
 //   lock[i]      route index stop i must stay on (already loaded on that truck), or null; optional
 //   allowed[i]   bit mask of the routes that may take stop i (bit r = route r), or null for any;
 //                optional (drivers' areas)
@@ -131,7 +132,7 @@ function routeEval(route, p, w, ins, pos, out, r) {
     }
     if (p.lock && p.lock[i] != null && p.lock[i] !== r) off += LOCKED;
     else if (p.allowed && p.allowed[i] != null && !(p.allowed[i] & (1 << r))) off += LOCKED;
-    else if (p.home && p.home[i] != null && p.home[i] !== r) off += p.away || 0;
+    else if (p.home && p.home[i] != null && p.home[i] !== r) off += p.awayFor && p.awayFor[i] != null ? p.awayFor[i] : p.away || 0;
     t += legTime(p, t, prev, i);
     if (p.dist) dist += p.dist[prev][i];
     const o = p.open[i];

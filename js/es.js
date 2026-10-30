@@ -1,6 +1,10 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "Draw each driver's part of town. A client inside a driver's area always goes to that driver. A flexible driver keeps their own area and can help other areas: only when needed, or whenever it saves money (choose below). Clients outside every area go to whoever is cheapest. Dots are clients, in the color of the area they're in (gray = no area).": "Dibuje la parte de la ciudad de cada chofer. Un cliente dentro de la zona de un chofer siempre va con ese chofer. Un chofer flexible conserva su zona y puede ayudar en otras: solo cuando hace falta, o siempre que ahorre dinero (elija abajo). Los clientes fuera de todas las zonas los lleva quien salga más barato. Los puntos son clientes, del color de la zona en la que están (gris = sin zona).",
+  "Flexible drivers help other areas": "Los choferes flexibles ayudan en otras zonas",
+  "only when needed (the area's driver would be late or back after the latest return)": "solo cuando hace falta (el chofer de la zona llegaría tarde o regresaría después de la hora límite)",
+  "whenever it saves more than the \"keep with usual driver\" amount": "siempre que ahorre más que la cantidad de \"dejar con su chofer de siempre\"",
   "{name}'s area (off today: anyone)": "zona de {name} (no trabaja hoy: cualquiera)",
   "{n} clients are in more than one area: they belong to the driver higher in this list (a flexible driver can still take them when that saves money).": "{n} clientes están en más de una zona: son del chofer más arriba en esta lista (un chofer flexible todavía puede llevarlos cuando eso ahorra dinero).",
   "On days a driver isn't working, their area's clients go to whoever is cheapest.": "Los días que un chofer no trabaja, los clientes de su zona los lleva quien salga más barato.",
@@ -16,7 +20,6 @@ export const ES = {
   "Remove {name}'s area?": "¿Quitar la zona de {name}?",
   "Click at least 3 points around the area first.": "Primero haga clic en al menos 3 puntos alrededor de la zona.",
   "Driver areas": "Zonas de choferes",
-  "Draw each driver's part of town. A client inside a driver's area always goes to that driver. A flexible driver keeps their own area and may also take stops from other areas when that saves more than the \"keep with usual driver\" amount. Clients outside every area go to whoever is cheapest. Dots are clients, in the color of the area they're in (gray = no area).": "Dibuje la parte de la ciudad de cada chofer. Un cliente dentro de la zona de un chofer siempre va con ese chofer. Un chofer flexible conserva su zona y también puede llevar paradas de otras zonas cuando eso ahorra más que la cantidad de \"dejar con su chofer de siempre\". Los clientes fuera de todas las zonas los lleva quien salga más barato. Los puntos son clientes, del color de la zona en la que están (gris = sin zona).",
   "Finish area": "Terminar zona",
   "Undo last point": "Quitar último punto",
   "No backup for that day.": "No hay copia de ese día.",

@@ -60,6 +60,7 @@ export const DEFAULT_SETTINGS = {
   routeArea: 'some', // keep each driver in one part of town: off / some / strong (see AREA in app.js)
   trucks: {}, // driver name -> Geotab device id
   areas: {}, // driver name -> { poly: [[lat, lng], ...], flex } (see areas.js)
+  flexHelp: 'needed', // flexible drivers help other areas: 'needed' (only to avoid lateness) or 'saves'
   geotabRadius: 200,
   forecast: true, // check the clients likely to order (from past orders) on a new day
   learnStops: true, // plan with real stop times from the trucks once a client has enough visits

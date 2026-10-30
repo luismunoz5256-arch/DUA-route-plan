@@ -68,7 +68,13 @@ function driverCounts(date = planDate) {
   return counts;
 }
 
+// How the optimizer weighs finish times. With drivers' areas and help "only when needed", a driver
+// with nothing to do in their area may be left without stops instead of being sent across town
+// (the driver-count comparison then shows the cheaper count).
+const solverWeights = () => ({ balance: BALANCE[settings.balance] ?? 0.15, ...(hasAreas() && settings.flexHelp !== 'saves' ? { empty: 0 } : {}) });
+
 // Drivers' areas are drawn in Settings (see areas.js and renderAreas).
+const FLEX_ONLY_WHEN_NEEDED = 180; // minutes of pay (see awayFor in problemFor)
 const hasAreas = () => Object.values(settings.areas || {}).some((a) => a.poly?.length >= 3);
 
 // The driver each client usually gets, learned from routes sent before `date`: whoever took them
@@ -121,7 +127,7 @@ function sameAreaSameDriver(orders, k) {
 async function bestPlanOrders(k) {
   const learned = usualDrivers();
   const free = { ...plan, stops: plan.stops.map((s) => ({ ...s, driver: '', home: homeOf(clients.find((c) => c.id === s.id) || {}, learned) })) };
-  const r = await runSolve(problemFor(free, k), { timeLimitMs: 2500, weights: { balance: BALANCE[settings.balance] ?? 0.15 } });
+  const r = await runSolve(problemFor(free, k), { timeLimitMs: 2500, weights: solverWeights() });
   const orders = r.routes.map((x) => x.order);
   return isLearning() && !hasAreas() ? sameAreaSameDriver(orders, k) : orders;
 }
@@ -393,6 +399,10 @@ function problemFor(p, k) {
     home: [null, ...p.stops.map((s) => index(areaOwner(s, settings.areas, settings.drivers)) ?? (s.home ? index(s.home) : null))],
     allowed: [null, ...p.stops.map((s) => allowedMask(areaOwner(s, settings.areas, settings.drivers), settings.areas, settings.drivers, k))],
     away: perMinute ? num(settings.keepWithDriver, 10) / perMinute : 0,
+    // A flexible driver helps another area only when needed (the area's driver would be late or back
+    // after the latest return): moving an area stop costs as much as 3 hours of pay, so only lateness
+    // outweighs it. Or, if chosen, whenever it saves more than the keep-with-usual-driver amount.
+    awayFor: [null, ...p.stops.map((s) => (settings.flexHelp !== 'saves' && areaOwner(s, settings.areas, settings.drivers) ? FLEX_ONLY_WHEN_NEEDED : null))],
     // Stops given to a driver by hand never go to another truck.
     lock: [null, ...p.stops.map((s) => (s.driver ? index(s.driver) : null))],
     // Map position in km from the warehouse, so routes can be kept compact.
@@ -833,7 +843,7 @@ async function buildRoutes() {
         status(plural(vehicles, 'Optimizing routes for 1 driver…', 'Optimizing routes for {n} drivers…'));
         const r = await runSolve(problemFor(plan, vehicles), {
           timeLimitMs: vehicles === k ? 2500 : 1500,
-          weights: { balance: BALANCE[settings.balance] ?? 0.15 },
+          weights: solverWeights(),
         });
         let orders = r.routes.map((x) => x.order);
         if (isLearning() && !old && !plan.stops.some((s) => s.driver) && !hasAreas()) orders = sameAreaSameDriver(orders, vehicles);
@@ -859,7 +869,7 @@ async function buildRoutes() {
         if (locked) {
           status(t('Comparing with planning from scratch…'));
           const scratch = { ...plan, stops: plan.stops.map((s) => ({ ...s, home: homeOf(clients.find((c) => c.id === s.id) || {}, learned) })) };
-          orders = (await runSolve(problemFor(scratch, k), { timeLimitMs: 2500, weights: { balance: BALANCE[settings.balance] ?? 0.15 } })).routes.map((x) => x.order);
+          orders = (await runSolve(problemFor(scratch, k), { timeLimitMs: 2500, weights: solverWeights() })).routes.map((x) => x.order);
         }
         const saves = cost(kept.orders) - cost(orders);
         const before = routeIndex(kept.orders);
@@ -1538,7 +1548,7 @@ function renderFinal() {
 async function setFinalOrder(btn) {
   await planQueue;
   await busy(btn, async (status) => {
-    const weights = { balance: BALANCE[settings.balance] ?? 0.15 };
+    const weights = solverWeights();
     status(t('Working…'));
     for (const opt of plan.options) {
       if (!opt.orders.flat().length) continue;
@@ -2243,6 +2253,7 @@ function renderAreas() {
         ' ' + t("On days a driver isn't working, their area's clients go to whoever is cheapest.")
       : '';
   $('#area-draw-btns').hidden = !drawing;
+  $('#flex-help').value = settings.flexHelp === 'saves' ? 'saves' : 'needed';
   areasMap = mapIn($('#areas-map'), areasMap);
   if (!areasMap) return;
   setTimeout(() => areasMap.map.invalidateSize(), 0);
@@ -2304,6 +2315,10 @@ $('#area-rows').addEventListener('change', (e) => {
   const name = e.target.closest('.area-row')?.dataset.name;
   if (!name || !e.target.matches('[data-area-flex]')) return;
   saveArea(name, { poly: settings.areas?.[name]?.poly || [], flex: e.target.checked });
+});
+$('#flex-help').addEventListener('change', (e) => {
+  settings.flexHelp = e.target.value;
+  saveSettings();
 });
 $('#btn-area-finish').addEventListener('click', () => {
   if (drawing.pts.length < 3) return alert(t('Click at least 3 points around the area first.'));
