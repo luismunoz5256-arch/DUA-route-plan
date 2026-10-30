@@ -150,6 +150,11 @@ table.week td.num, table.week th.num { text-align: right; }
 .qb-note { font-size: 0.85rem; margin: 0 0 0.7rem; }
 .tag.forecast { background: #e6f0fa; color: #22548a; }
 .forecast-note { margin: 0 0 0.6rem; }
+.tag.area { background: color-mix(in srgb, var(--route) 15%, #fff); color: var(--route); }
+.area-rows { display: flex; flex-direction: column; gap: 0.4rem; margin: 0.6rem 0; }
+.area-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; padding: 0.4rem 0; border-bottom: 1px solid var(--line); }
+.area-row .swatch { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+.areas-map { height: 480px; margin-top: 0.6rem; cursor: crosshair; }
 .tag.on-route { background: var(--route); color: #fff; }
 #final-card h2 { margin: 0; }
 #final-note { margin: 0.6rem 0 0; }

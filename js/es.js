@@ -1,6 +1,21 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "{name}'s area": "zona de {name}",
+  "{n} clients in the area": "{n} clientes en la zona",
+  "no area": "sin zona",
+  "Flexible (can help other areas)": "Flexible (puede ayudar en otras zonas)",
+  "Redraw": "Volver a dibujar",
+  "Draw area": "Dibujar zona",
+  "Click on the map around {name}'s area, point by point. Then click Finish area.": "Haga clic en el mapa alrededor de la zona de {name}, punto por punto. Luego haga clic en Terminar zona.",
+  "{n} points": "{n} puntos",
+  "{n} clients are outside every area; whoever is cheapest takes them.": "{n} clientes están fuera de todas las zonas; los lleva quien salga más barato.",
+  "Remove {name}'s area?": "¿Quitar la zona de {name}?",
+  "Click at least 3 points around the area first.": "Primero haga clic en al menos 3 puntos alrededor de la zona.",
+  "Driver areas": "Zonas de choferes",
+  "Draw each driver's part of town. A client inside a driver's area always goes to that driver. A flexible driver keeps their own area and may also take stops from other areas when that saves more than the \"keep with usual driver\" amount. Clients outside every area go to whoever is cheapest. Dots are clients, in the color of the area they're in (gray = no area).": "Dibuje la parte de la ciudad de cada chofer. Un cliente dentro de la zona de un chofer siempre va con ese chofer. Un chofer flexible conserva su zona y también puede llevar paradas de otras zonas cuando eso ahorra más que la cantidad de \"dejar con su chofer de siempre\". Los clientes fuera de todas las zonas los lleva quien salga más barato. Los puntos son clientes, del color de la zona en la que están (gris = sin zona).",
+  "Finish area": "Terminar zona",
+  "Undo last point": "Quitar último punto",
   "No backup for that day.": "No hay copia de ese día.",
   "Sync stopped to protect your data (it would have removed most of: {what}). Nothing was changed.": "La sincronización se detuvo para proteger sus datos (habría quitado la mayoría de: {what}). No se cambió nada.",
   "clients": "clientes",

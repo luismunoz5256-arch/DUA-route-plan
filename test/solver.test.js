@@ -225,3 +225,16 @@ test('legs driven later in the day use the afternoon traffic times', () => {
   const r = solve({ ...p, time2: slow, switchAt: 13 * 60 }, { timeLimitMs: 100 });
   assert.equal(Math.round(r.routes[0].finish), Math.round(simulateRoute(r.routes[0].order, { ...p, time2: slow, switchAt: 13 * 60 }).finish));
 });
+
+test('stops only go to the drivers allowed to take them (driver areas)', () => {
+  const p = makeProblem({ n: 12, vehicles: 3, seed: 6 });
+  // stops 1-4 only route 0, 5-8 only route 1, 9-12 route 2 or the flexible route 1
+  const allowed = [null, ...Array.from({ length: 12 }, (_, i) => (i < 4 ? 0b001 : i < 8 ? 0b010 : 0b110))];
+  for (const seed of [1, 2]) {
+    const r = solve({ ...p, allowed }, { timeLimitMs: 200, seed });
+    r.routes.forEach((x, k) => x.order.forEach((i) => assert.ok(allowed[i] & (1 << k), `stop ${i} on route ${k}`)));
+  }
+  // a new stop is inserted only where allowed
+  const out = insertStop([[1, 2], [5, 6], [9]], { ...p, allowed }, 3);
+  assert.ok(out[0].includes(3));
+});

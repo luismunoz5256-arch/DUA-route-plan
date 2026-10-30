@@ -12,6 +12,7 @@ import { analyzeDay, parseDuration, minuteOfDay } from './tracking.js';
 import { recordStays, learnedStop, MIN_VISITS } from './stays.js';
 import { forecastFor, isLikely, MIN_WEEKS } from './forecast.js';
 import { dayStats, weekScores, ON_TIME_MIN } from './scorecard.js';
+import { areaOwner, allowedMask } from './areas.js';
 import { mapIn, pin, depotPin, fit } from './maps.js';
 import { t, locale, dayNames, translatePage, langSwitch } from './i18n.js';
 import {
@@ -67,6 +68,9 @@ function driverCounts(date = planDate) {
   return counts;
 }
 
+// Drivers' areas are drawn in Settings (see areas.js and renderAreas).
+const hasAreas = () => Object.values(settings.areas || {}).some((a) => a.poly?.length >= 3);
+
 // The driver each client usually gets, learned from routes sent before `date`: whoever took them
 // most, if at least twice and at least half the time.
 function usualDrivers(date = planDate) {
@@ -119,7 +123,7 @@ async function bestPlanOrders(k) {
   const free = { ...plan, stops: plan.stops.map((s) => ({ ...s, driver: '', home: homeOf(clients.find((c) => c.id === s.id) || {}, learned) })) };
   const r = await runSolve(problemFor(free, k), { timeLimitMs: 2500, weights: { balance: BALANCE[settings.balance] ?? 0.15 } });
   const orders = r.routes.map((x) => x.order);
-  return isLearning() ? sameAreaSameDriver(orders, k) : orders;
+  return isLearning() && !hasAreas() ? sameAreaSameDriver(orders, k) : orders;
 }
 
 // { driverName: [client ids] } for a set of routes of the current plan.
@@ -384,7 +388,10 @@ function problemFor(p, k) {
     otAt: p.otAt.slice(0, k),
     fuelPerMile: p.payRate ? p.fuelPerMile / perMinute : 0,
     vehicles: k,
-    home: [null, ...p.stops.map((s) => (s.home ? index(s.home) : null))],
+    // A client in a driver's area prefers that driver (the area beats the learned usual driver),
+    // and only that driver or a flexible one may take it (see areas.js).
+    home: [null, ...p.stops.map((s) => index(areaOwner(s, settings.areas, settings.drivers)) ?? (s.home ? index(s.home) : null))],
+    allowed: [null, ...p.stops.map((s) => allowedMask(areaOwner(s, settings.areas, settings.drivers), settings.areas, settings.drivers, k))],
     away: perMinute ? num(settings.keepWithDriver, 10) / perMinute : 0,
     // Stops given to a driver by hand never go to another truck.
     lock: [null, ...p.stops.map((s) => (s.driver ? index(s.driver) : null))],
@@ -555,6 +562,8 @@ function renderStops() {
   const driverTag = (c) => {
     const on = assigned.get(c.id);
     if (on) return ` <span class="tag on-route" style="--route:${COLORS[settings.drivers.indexOf(on) % COLORS.length]}">🚚 ${esc(on)}</span>`;
+    const area = hasLoc(c) && areaOwner(c, settings.areas, settings.drivers);
+    if (area) return ` <span class="tag area" style="--route:${COLORS[settings.drivers.indexOf(area) % COLORS.length]}">📍 ${t("{name}'s area", { name: esc(area) })}</span>`;
     const home = homeOf(c, learned);
     return home ? ` <span class="tag">${t('usually {name}', { name: esc(home) })}</span>` : '';
   };
@@ -694,6 +703,10 @@ function renameDriver(i, name) {
     settings.trucks = { ...settings.trucks, [name]: settings.trucks[old] };
     delete settings.trucks[old];
   }
+  if (settings.areas?.[old]) {
+    settings.areas = { ...settings.areas, [name]: settings.areas[old] };
+    delete settings.areas[old];
+  }
   saveSettings();
   // So does being someone's usual driver.
   const theirs = clients.filter((c) => old && c.homeDriver === old);
@@ -821,7 +834,7 @@ async function buildRoutes() {
           weights: { balance: BALANCE[settings.balance] ?? 0.15 },
         });
         let orders = r.routes.map((x) => x.order);
-        if (isLearning() && !old && !plan.stops.some((s) => s.driver)) orders = sameAreaSameDriver(orders, vehicles);
+        if (isLearning() && !old && !plan.stops.some((s) => s.driver) && !hasAreas()) orders = sameAreaSameDriver(orders, vehicles);
         plan.options.push({ k: vehicles, orders, original: orders.map((o) => o.slice()) });
       }
       const kept = plan.options.find((o) => o.k === k);
@@ -2189,7 +2202,120 @@ const SETTING_FIELDS = [
 const NUMERIC = new Set(['depotLat', 'depotLng', 'payRate', 'regularHoursPerDay', 'regularHoursPerWeek', 'fuelPerMile', 'defaultUnload', 'monthlyElementLimit', 'monthlyGeocodeLimit', 'keepWithDriver']);
 const DEPOT_LOC = ['depotAddress', 'depotLat', 'depotLng'];
 
+// ---------- Driver areas (Settings) ----------
+
+let areasMap = null;
+let drawing = null; // { name, pts: [[lat, lng], ...] } while an area is being drawn
+
+function areaDrivers() {
+  return settings.drivers.slice(0, Math.max(settings.driverCount + 1, ...Object.keys(settings.areas || {}).map((n) => settings.drivers.indexOf(n) + 1)));
+}
+
+function renderAreas() {
+  const areas = settings.areas || {};
+  const located = clients.filter((c) => c.active !== false && hasLoc(c));
+  const count = (name) => located.filter((c) => areaOwner(c, areas, settings.drivers) === name).length;
+  $('#area-rows').innerHTML = areaDrivers()
+    .map((name, i) => {
+      const a = areas[name];
+      const drawn = a?.poly?.length >= 3;
+      return `<div class="area-row" data-name="${esc(name)}">
+        <span class="swatch" style="background:${COLORS[i % COLORS.length]}"></span>
+        <b>${esc(name)}</b>
+        <span class="muted small">${drawn ? t('{n} clients in the area', { n: count(name) }) : t('no area')}</span>
+        <label class="inline small"><input type="checkbox" data-area-flex ${a?.flex ? 'checked' : ''} /> ${t('Flexible (can help other areas)')}</label>
+        <span class="grow"></span>
+        <button type="button" class="secondary" data-area-draw ${drawing ? 'disabled' : ''}>${drawn ? t('Redraw') : t('Draw area')}</button>
+        ${drawn ? `<button type="button" class="secondary danger" data-area-clear ${drawing ? 'disabled' : ''}>${t('Clear')}</button>` : ''}
+      </div>`;
+    })
+    .join('');
+  const outside = located.filter((c) => !areaOwner(c, areas, settings.drivers)).length;
+  $('#area-msg').textContent = drawing
+    ? t("Click on the map around {name}'s area, point by point. Then click Finish area.", { name: drawing.name }) + ` (${t('{n} points', { n: drawing.pts.length })})`
+    : hasAreas()
+      ? t('{n} clients are outside every area; whoever is cheapest takes them.', { n: outside })
+      : '';
+  $('#area-draw-btns').hidden = !drawing;
+  areasMap = mapIn($('#areas-map'), areasMap);
+  if (!areasMap) return;
+  setTimeout(() => areasMap.map.invalidateSize(), 0);
+  const layer = areasMap.layer;
+  const pts = [];
+  areaDrivers().forEach((name, i) => {
+    const a = areas[name];
+    if (a?.poly?.length >= 3 && drawing?.name !== name) L.polygon(a.poly, { color: COLORS[i % COLORS.length], weight: 2, fillOpacity: 0.12 }).addTo(layer).bindTooltip(name);
+  });
+  for (const c of located) {
+    const owner = areaOwner(c, areas, settings.drivers);
+    const color = owner ? COLORS[settings.drivers.indexOf(owner) % COLORS.length] : '#8a948e';
+    L.circleMarker([Number(c.lat), Number(c.lng)], { radius: 5, color: '#fff', weight: 1, fillColor: color, fillOpacity: 0.95 }).addTo(layer).bindTooltip(c.name);
+    pts.push([Number(c.lat), Number(c.lng)]);
+  }
+  const depot = depotPoint();
+  if (depot) {
+    depotPin(layer, depot, depotName());
+    pts.push([depot.lat, depot.lng]);
+  }
+  if (drawing?.pts.length) {
+    L.polyline(drawing.pts, { color: '#1b231e', weight: 2, dashArray: '5 5' }).addTo(layer);
+    for (const p of drawing.pts) L.circleMarker(p, { radius: 4, color: '#1b231e', fillOpacity: 1 }).addTo(layer);
+  }
+  if (!areasMap.fitted && pts.length) {
+    fit(areasMap, pts);
+    areasMap.fitted = true;
+  }
+  if (!areasMap.clickHooked) {
+    areasMap.clickHooked = true;
+    areasMap.map.on('click', (e) => {
+      if (!drawing) return;
+      drawing.pts.push([Math.round(e.latlng.lat * 1e5) / 1e5, Math.round(e.latlng.lng * 1e5) / 1e5]);
+      renderAreas();
+    });
+  }
+}
+
+function saveArea(name, area) {
+  settings.areas = { ...(settings.areas || {}) };
+  if (area) settings.areas[name] = area;
+  else delete settings.areas[name];
+  saveSettings();
+  renderAreas();
+  if (day) renderStops();
+}
+
+$('#area-rows').addEventListener('click', (e) => {
+  const name = e.target.closest('.area-row')?.dataset.name;
+  if (!name) return;
+  if (e.target.closest('[data-area-draw]')) {
+    drawing = { name, pts: [] };
+    renderAreas();
+    $('#areas-map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+  if (e.target.closest('[data-area-clear]') && confirm(t("Remove {name}'s area?", { name }))) saveArea(name, null);
+});
+$('#area-rows').addEventListener('change', (e) => {
+  const name = e.target.closest('.area-row')?.dataset.name;
+  if (!name || !e.target.matches('[data-area-flex]')) return;
+  saveArea(name, { poly: settings.areas?.[name]?.poly || [], flex: e.target.checked });
+});
+$('#btn-area-finish').addEventListener('click', () => {
+  if (drawing.pts.length < 3) return alert(t('Click at least 3 points around the area first.'));
+  const { name, pts } = drawing;
+  drawing = null;
+  saveArea(name, { poly: pts, flex: !!settings.areas?.[name]?.flex });
+});
+$('#btn-area-undo').addEventListener('click', () => {
+  drawing.pts.pop();
+  renderAreas();
+});
+$('#btn-area-cancel').addEventListener('click', () => {
+  drawing = null;
+  renderAreas();
+});
+
 function renderSettings() {
+  renderAreas();
   sform.elements.forecast.checked = settings.forecast !== false;
   $('#learn-line').textContent = isLearning(localDate())
     ? t('Learning now (since {from}): routes are planned the cheapest way each day, and each area keeps the same driver from day to day. After {until}, each client stays with the driver they had most often.', { from: fmtDateLong(settings.learnFrom || localDate()), until: fmtDateLong(settings.learnUntil) })
