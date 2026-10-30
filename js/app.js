@@ -563,6 +563,8 @@ function renderStops() {
     const on = assigned.get(c.id);
     if (on) return ` <span class="tag on-route" style="--route:${COLORS[settings.drivers.indexOf(on) % COLORS.length]}">🚚 ${esc(on)}</span>`;
     const area = hasLoc(c) && areaOwner(c, settings.areas, settings.drivers);
+    // The area's driver isn't working today (fewer drivers): anyone can take it.
+    if (area && settings.drivers.indexOf(area) >= (plan ? viewOption().k : settings.driverCount)) return ` <span class="tag">📍 ${t("{name}'s area (off today: anyone)", { name: esc(area) })}</span>`;
     if (area) return ` <span class="tag area" style="--route:${COLORS[settings.drivers.indexOf(area) % COLORS.length]}">📍 ${t("{name}'s area", { name: esc(area) })}</span>`;
     const home = homeOf(c, learned);
     return home ? ` <span class="tag">${t('usually {name}', { name: esc(home) })}</span>` : '';
@@ -2231,10 +2233,14 @@ function renderAreas() {
     })
     .join('');
   const outside = located.filter((c) => !areaOwner(c, areas, settings.drivers)).length;
+  const drawn = settings.drivers.filter((name) => areas[name]?.poly?.length >= 3);
+  const overlap = located.filter((c) => drawn.filter((name) => areaOwner(c, { [name]: areas[name] }, [name])).length > 1).length;
   $('#area-msg').textContent = drawing
     ? t("Click on the map around {name}'s area, point by point. Then click Finish area.", { name: drawing.name }) + ` (${t('{n} points', { n: drawing.pts.length })})`
     : hasAreas()
-      ? t('{n} clients are outside every area; whoever is cheapest takes them.', { n: outside })
+      ? t('{n} clients are outside every area; whoever is cheapest takes them.', { n: outside }) +
+        (overlap ? ' ' + t('{n} clients are in more than one area: they belong to the driver higher in this list (a flexible driver can still take them when that saves money).', { n: overlap }) : '') +
+        ' ' + t("On days a driver isn't working, their area's clients go to whoever is cheapest.")
       : '';
   $('#area-draw-btns').hidden = !drawing;
   areasMap = mapIn($('#areas-map'), areasMap);

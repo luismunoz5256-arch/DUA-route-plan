@@ -1,6 +1,9 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "{name}'s area (off today: anyone)": "zona de {name} (no trabaja hoy: cualquiera)",
+  "{n} clients are in more than one area: they belong to the driver higher in this list (a flexible driver can still take them when that saves money).": "{n} clientes están en más de una zona: son del chofer más arriba en esta lista (un chofer flexible todavía puede llevarlos cuando eso ahorra dinero).",
+  "On days a driver isn't working, their area's clients go to whoever is cheapest.": "Los días que un chofer no trabaja, los clientes de su zona los lleva quien salga más barato.",
   "{name}'s area": "zona de {name}",
   "{n} clients in the area": "{n} clientes en la zona",
   "no area": "sin zona",
