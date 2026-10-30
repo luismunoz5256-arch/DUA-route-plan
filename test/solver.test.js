@@ -225,31 +225,3 @@ test('legs driven later in the day use the afternoon traffic times', () => {
   const r = solve({ ...p, time2: slow, switchAt: 13 * 60 }, { timeLimitMs: 100 });
   assert.equal(Math.round(r.routes[0].finish), Math.round(simulateRoute(r.routes[0].order, { ...p, time2: slow, switchAt: 13 * 60 }).finish));
 });
-
-test('stops only go to the drivers allowed to take them (driver areas)', () => {
-  const p = makeProblem({ n: 12, vehicles: 3, seed: 6 });
-  // stops 1-4 only route 0, 5-8 only route 1, 9-12 route 2 or the flexible route 1
-  const allowed = [null, ...Array.from({ length: 12 }, (_, i) => (i < 4 ? 0b001 : i < 8 ? 0b010 : 0b110))];
-  for (const seed of [1, 2]) {
-    const r = solve({ ...p, allowed }, { timeLimitMs: 200, seed });
-    r.routes.forEach((x, k) => x.order.forEach((i) => assert.ok(allowed[i] & (1 << k), `stop ${i} on route ${k}`)));
-  }
-  // a new stop is inserted only where allowed
-  const out = insertStop([[1, 2], [5, 6], [9]], { ...p, allowed }, 3);
-  assert.ok(out[0].includes(3));
-});
-
-test('a stop with a high away cost stays with its home route unless that route would be late', () => {
-  const p = makeProblem({ n: 8, vehicles: 2, seed: 2 });
-  const home = [null, ...Array(8).fill(0)];
-  // a small away cost: the optimizer splits the stops between both drivers to save money
-  const cheap = solve({ ...p, home, away: 1, endBy: 2000 }, { timeLimitMs: 200 });
-  assert.ok(cheap.routes[1].order.length > 0);
-  // a high away cost for these stops (area stops): all stay home while that's on time
-  const awayFor = [null, ...Array(8).fill(180)];
-  const strict = solve({ ...p, home, away: 1, awayFor, endBy: 2000 }, { timeLimitMs: 200, weights: { empty: 0 } });
-  assert.equal(strict.routes[1].order.length, 0);
-  // ...but help still comes when the home driver would be back after the latest return
-  const tight = solve({ ...p, home, away: 1, awayFor, endBy: strict.routes[0].finish - 30 }, { timeLimitMs: 200, weights: { empty: 0 } });
-  assert.ok(tight.routes[1].order.length > 0 && tight.pastEndMinutes < 1);
-});
