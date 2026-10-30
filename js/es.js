@@ -1,6 +1,13 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "Westside": "Lado oeste",
+  "Eastside": "Lado este",
+  "Horizon / Socorro": "Horizon / Socorro",
+  "Central": "Centro",
+  "Side of town": "Lado de la ciudad",
+  "Anywhere": "Cualquiera",
+  "Stops on this side lean toward this driver, but still move when that saves money.": "Las paradas de este lado prefieren a este chofer, pero igual se mueven cuando eso ahorra dinero.",
   "No backup for that day.": "No hay copia de ese día.",
   "Sync stopped to protect your data (it would have removed most of: {what}). Nothing was changed.": "La sincronización se detuvo para proteger sus datos (habría quitado la mayoría de: {what}). No se cambió nada.",
   "clients": "clientes",

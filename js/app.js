@@ -12,6 +12,7 @@ import { analyzeDay, parseDuration, minuteOfDay } from './tracking.js';
 import { recordStays, learnedStop, MIN_VISITS } from './stays.js';
 import { forecastFor, isLikely, MIN_WEEKS } from './forecast.js';
 import { dayStats, weekScores, ON_TIME_MIN } from './scorecard.js';
+import { sideDriver, defaultSides, SIDES } from './sides.js';
 import { mapIn, pin, depotPin, fit } from './maps.js';
 import { t, locale, dayNames, translatePage, langSwitch } from './i18n.js';
 import {
@@ -80,9 +81,15 @@ function usualDrivers(date = planDate) {
   return out;
 }
 
-// A client's usual driver: set by hand on the client, else learned from past routes.
-// None while learning, so every stop goes wherever it's cheapest.
-const homeOf = (c, learned, date = planDate) => (isLearning(date) ? '' : c.homeDriver || learned.get(c.id) || '');
+// Each driver's home side of town (see sides.js); first set up as Driver 1 west, 2 east,
+// 3 Horizon/Socorro, 4 central, and changed next to each driver on the Plan screen.
+const driverSides = () => settings.sides || defaultSides(settings.drivers);
+const sideHome = (c) => (hasLoc(c) ? sideDriver(c, depotPoint(), driverSides(), settings.drivers) : '');
+
+// A client's usual driver: set by hand on the client, else the driver of its side of town, else
+// learned from past routes. While learning only the side counts. It's a preference: a stop still
+// goes to someone else when that saves more than the keep-with-usual-driver amount.
+const homeOf = (c, learned, date = planDate) => (isLearning(date) ? sideHome(c) : c.homeDriver || sideHome(c) || learned.get(c.id) || '');
 
 // While learning, the optimizer's routes come out in any order, so the east side could be
 // "route 1" one day and "route 3" the next. Give each route to the driver who took most of
@@ -119,7 +126,7 @@ async function bestPlanOrders(k) {
   const free = { ...plan, stops: plan.stops.map((s) => ({ ...s, driver: '', home: homeOf(clients.find((c) => c.id === s.id) || {}, learned) })) };
   const r = await runSolve(problemFor(free, k), { timeLimitMs: 2500, weights: { balance: BALANCE[settings.balance] ?? 0.15 } });
   const orders = r.routes.map((x) => x.order);
-  return isLearning() ? sameAreaSameDriver(orders, k) : orders;
+  return isLearning() && !free.stops.some((s) => s.home) ? sameAreaSameDriver(orders, k) : orders;
 }
 
 // { driverName: [client ids] } for a set of routes of the current plan.
@@ -520,8 +527,11 @@ function renderDriverRows() {
     const before = weekBefore(i, history);
     const typed = day.weekHours[i];
     const extra = i >= settings.driverCount ? ` <span class="muted small">${t('(only if one more driver)')}</span>` : '';
+    const side = driverSides()[driverName(i)] || '';
+    const sideNames = { west: t('Westside'), east: t('Eastside'), southeast: t('Horizon / Socorro'), central: t('Central') };
     return `<tr>
       <td${label('Driver')}><input data-driver="${i}" value="${esc(driverName(i))}" />${extra}</td>
+      <td${label('Side of town')}><select data-side="${i}"><option value="">${t('Anywhere')}</option>${SIDES.map((x) => `<option value="${x}" ${x === side ? 'selected' : ''}>${sideNames[x]}</option>`).join('')}</select></td>
       <td${label('Hours this week')}><input class="hours" type="number" step="0.25" min="0" data-hours="${i}" value="${typed != null && typed !== '' ? esc(typed) : fmtHours(before)}" /> h</td>
       <td class="small"${label('Overtime starts')}>${fmtTime(overtimeStart({ ...rules, weekBeforeMin: before }))}</td>
     </tr>`;
@@ -677,6 +687,17 @@ $('#plan-area').addEventListener('change', (e) => {
 $('#driver-rows').addEventListener('change', (e) => {
   const d = e.target.dataset.driver;
   const h = e.target.dataset.hours;
+  const sd = e.target.dataset.side;
+  if (sd != null) {
+    const sides = { ...driverSides() };
+    // one driver per side
+    for (const [name, x] of Object.entries(sides)) if (x === e.target.value && name !== driverName(Number(sd))) delete sides[name];
+    if (e.target.value) sides[driverName(Number(sd))] = e.target.value;
+    else delete sides[driverName(Number(sd))];
+    settings.sides = sides;
+    saveSettings();
+    renderStops();
+  }
   if (d != null) renameDriver(Number(d), e.target.value.trim() || t('Driver {n}', { n: Number(d) + 1 }));
   if (h != null) {
     day.weekHours[h] = e.target.value;
@@ -693,6 +714,10 @@ function renameDriver(i, name) {
   if (settings.trucks?.[old]) {
     settings.trucks = { ...settings.trucks, [name]: settings.trucks[old] };
     delete settings.trucks[old];
+  }
+  if (driverSides()[old]) {
+    settings.sides = { ...driverSides(), [name]: driverSides()[old] };
+    delete settings.sides[old];
   }
   saveSettings();
   // So does being someone's usual driver.
@@ -821,7 +846,7 @@ async function buildRoutes() {
           weights: { balance: BALANCE[settings.balance] ?? 0.15 },
         });
         let orders = r.routes.map((x) => x.order);
-        if (isLearning() && !old && !plan.stops.some((s) => s.driver)) orders = sameAreaSameDriver(orders, vehicles);
+        if (isLearning() && !old && !plan.stops.some((s) => s.driver) && !plan.stops.some((s) => s.home)) orders = sameAreaSameDriver(orders, vehicles);
         plan.options.push({ k: vehicles, orders, original: orders.map((o) => o.slice()) });
       }
       const kept = plan.options.find((o) => o.k === k);

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <meta name="build" content="933750fb" />
+    <meta name="build" content="f50a45d2" />
     <title>DUA Route Planner</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
@@ -149,7 +149,7 @@
             </label>
           </div>
           <table class="drivers-table stack">
-            <thead><tr><th>Driver</th><th title="Paid hours already this week (from History). Change it if it's wrong.">Hours worked this week before today</th><th>Overtime starts</th></tr></thead>
+            <thead><tr><th>Driver</th><th title="Stops on this side lean toward this driver, but still move when that saves money.">Side of town</th><th title="Paid hours already this week (from History). Change it if it's wrong.">Hours worked this week before today</th><th>Overtime starts</th></tr></thead>
             <tbody id="driver-rows"></tbody>
           </table>
         </div>
@@ -403,6 +403,7 @@
             <li>Choose the number of drivers. Check each driver's hours so far this week (filled in from History).</li>
             <li>Click <b>Build routes</b>. You see the plan for the number of drivers you picked. <b>Compare driver counts</b> also shows one driver fewer and one more, with labor (overtime at 1.5×) and fuel. The cheapest on-time plan is marked <span class="tag good">Best</span>; click its row (or <b>Show that plan</b>) to switch to it.</li>
             <li><b>Keep drivers in their own area</b> (Some by default) makes routes stay in one part of town when that costs about the same. The map shows the real roads when there's a Google key. ⚠ <b>check location</b> marks clients whose map spot looks wrong; fix those first, since one misplaced client can pull a driver across town.</li>
+            <li><b>Side of town</b> (next to each driver on this screen): Westside, Eastside, Horizon / Socorro or Central. Stops lean toward their side's driver but still move when that saves money.</li>
             <li>Want to decide who takes what? In the stop list's <b>Driver</b> column, pick a driver for any stop (or <b>Fill in usual drivers</b>), then <b>Build routes</b>: those stops stay with that driver and the app works out the best order, giving the rest to whoever is cheapest. The results say what your choices cost compared with letting the app choose. A client marked <b>Always this driver</b> (in the client form) goes to their usual driver every day.</li>
             <li>Need a change? Use ▲ ▼ to reorder a stop, or <b>Move to</b> to give it to another driver (it stays with that driver if you build again). Times and cost update right away.</li>
             <li>Drivers see their route as soon as they log in on their phone (or send a <b>phone link</b> / print the sheets).</li>
@@ -459,6 +460,7 @@
             <li>Elija el número de choferes. Revise las horas de cada chofer en lo que va de la semana (vienen del Historial).</li>
             <li>Haga clic en <b>Crear rutas</b>. Verá el plan con el número de choferes que eligió. <b>Comparar número de choferes</b> también muestra un chofer menos y uno más, con mano de obra (tiempo extra a 1.5×) y combustible. El plan más barato a tiempo está marcado como <span class="tag good">Mejor</span>; haga clic en su fila (o en <b>Ver ese plan</b>) para cambiar a él.</li>
             <li><b>Mantener a cada chofer en su zona</b> (Algo por defecto) hace que las rutas se queden en una parte de la ciudad cuando cuesta casi lo mismo. El mapa muestra las calles reales cuando hay clave de Google. ⚠ <b>revisar ubicación</b> marca clientes cuyo lugar en el mapa parece incorrecto; corríjalos primero, porque un cliente mal ubicado puede mandar a un chofer al otro lado de la ciudad.</li>
+            <li><b>Lado de la ciudad</b> (junto a cada chofer en esta pantalla): Lado oeste, Lado este, Horizon / Socorro o Centro. Las paradas prefieren al chofer de su lado, pero igual se mueven cuando eso ahorra dinero.</li>
             <li>¿Quiere decidir quién lleva qué? En la columna <b>Chofer</b> de la lista de paradas, elija un chofer para cualquier parada (o <b>Poner choferes de siempre</b>) y luego <b>Crear rutas</b>: esas paradas se quedan con ese chofer y la aplicación calcula el mejor orden, dando las demás a quien salga más barato. Los resultados dicen cuánto cuestan sus elecciones comparado con dejar que la aplicación elija. Un cliente marcado <b>Siempre este chofer</b> (en el formulario del cliente) va con su chofer de siempre todos los días.</li>
             <li>¿Necesita un cambio? Use ▲ ▼ para reordenar una parada, o <b>Mover a…</b> para dársela a otro chofer (se queda con ese chofer si vuelve a crear las rutas). Las horas y el costo se actualizan al instante.</li>
             <li>Los choferes ven su ruta en cuanto entran en su teléfono (o envíe el <b>enlace para teléfono</b> / imprima las hojas).</li>
@@ -549,7 +551,7 @@
     </dialog>
 
     <script src="vendor/leaflet/leaflet.js"></script>
-    <script type="importmap">{"imports":{"./js/api.js":"./js/api.js?v=e1a24704","./js/app.js":"./js/app.js?v=6b5bd320","./js/config.js":"./js/config.js?v=68783d5e","./js/driver.js":"./js/driver.js?v=ed87f02d","./js/es.js":"./js/es.js?v=4e03763c","./js/forecast.js":"./js/forecast.js?v=6dea3fa6","./js/google.js":"./js/google.js?v=9e85b48c","./js/i18n.js":"./js/i18n.js?v=7236dc39","./js/maps.js":"./js/maps.js?v=6347d58e","./js/matrix.js":"./js/matrix.js?v=13b2f6ac","./js/merge.js":"./js/merge.js?v=cef35c03","./js/pay.js":"./js/pay.js?v=3a38de1c","./js/routeview.js":"./js/routeview.js?v=d175ee8f","./js/scorecard.js":"./js/scorecard.js?v=1bf7674f","./js/share.js":"./js/share.js?v=b023bbd3","./js/solver-worker.js":"./js/solver-worker.js?v=821c0718","./js/solver.js":"./js/solver.js?v=4fa50640","./js/stays.js":"./js/stays.js?v=99a8d412","./js/store.js":"./js/store.js?v=f34d24c3","./js/sync.js":"./js/sync.js?v=0628d11e","./js/tracking.js":"./js/tracking.js?v=5612cc24","./js/util.js":"./js/util.js?v=1ecf69be"}}</script>
-    <script type="module" src="js/app.js?v=6b5bd320"></script>
+    <script type="importmap">{"imports":{"./js/api.js":"./js/api.js?v=e1a24704","./js/app.js":"./js/app.js?v=bb4707a5","./js/config.js":"./js/config.js?v=68783d5e","./js/driver.js":"./js/driver.js?v=ed87f02d","./js/es.js":"./js/es.js?v=d1c7e2c1","./js/forecast.js":"./js/forecast.js?v=6dea3fa6","./js/google.js":"./js/google.js?v=9e85b48c","./js/i18n.js":"./js/i18n.js?v=7236dc39","./js/maps.js":"./js/maps.js?v=6347d58e","./js/matrix.js":"./js/matrix.js?v=13b2f6ac","./js/merge.js":"./js/merge.js?v=cef35c03","./js/pay.js":"./js/pay.js?v=3a38de1c","./js/routeview.js":"./js/routeview.js?v=d175ee8f","./js/scorecard.js":"./js/scorecard.js?v=1bf7674f","./js/share.js":"./js/share.js?v=b023bbd3","./js/sides.js":"./js/sides.js?v=8469d1a4","./js/solver-worker.js":"./js/solver-worker.js?v=821c0718","./js/solver.js":"./js/solver.js?v=4fa50640","./js/stays.js":"./js/stays.js?v=99a8d412","./js/store.js":"./js/store.js?v=f34d24c3","./js/sync.js":"./js/sync.js?v=d3afa152","./js/tracking.js":"./js/tracking.js?v=5612cc24","./js/util.js":"./js/util.js?v=1ecf69be"}}</script>
+    <script type="module" src="js/app.js?v=bb4707a5"></script>
   </body>
 </html>
