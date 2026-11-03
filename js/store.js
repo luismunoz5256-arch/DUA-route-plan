@@ -57,6 +57,15 @@ export const DEFAULT_SETTINGS = {
   driverCount: 3,
   drivers: ['Driver 1', 'Driver 2', 'Driver 3', 'Driver 4', 'Driver 5', 'Driver 6', 'Driver 7', 'Driver 8'],
   balance: 'low',
+  // Who works each weekday (0 = Sunday), by driver name: route 1 is the first of them, and so on.
+  schedule: {
+    1: ['Driver 1', 'Driver 2', 'Driver 3', 'Driver 4'],
+    2: ['Driver 1', 'Driver 3', 'Driver 4'],
+    3: ['Driver 1', 'Driver 2', 'Driver 4'],
+    4: ['Driver 1', 'Driver 2', 'Driver 3'],
+    5: ['Driver 1', 'Driver 2', 'Driver 3', 'Driver 4'],
+    6: ['Driver 1', 'Driver 2', 'Driver 3', 'Driver 4'],
+  },
   routeArea: 'some', // keep each driver in one part of town: off / some / strong (see AREA in app.js)
   trucks: {}, // driver name -> Geotab device id
   geotabRadius: 200,

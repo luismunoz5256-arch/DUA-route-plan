@@ -7,7 +7,7 @@ import { mergeData, canonical, dataLoss } from './merge.js';
 import { t } from './i18n.js';
 
 // Same list as SECRETARY_SETTINGS in apps-script/Code.gs.
-const SECRETARY_SETTINGS = ['driverCount', 'drivers', 'balance', 'routeArea', 'sides'];
+const SECRETARY_SETTINGS = ['driverCount', 'drivers', 'balance', 'routeArea', 'sides', 'schedule'];
 
 let hooks = { remoteChanged() {}, qbChanged() {}, status() {}, loggedOut() {} };
 let timer = null;

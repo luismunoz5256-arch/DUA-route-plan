@@ -39,7 +39,24 @@ let routeMap = null;
 const num = (v, fallback) => (v === '' || v == null || Number.isNaN(Number(v)) ? fallback : Number(v));
 const hasLoc = (c) => c.lat != null && c.lng != null && c.lat !== '' && c.lng !== '';
 const isScheduled = (c, weekday) => c.active !== false && !!(c.days && c.days[weekday]);
-const driverName = (i) => settings.drivers[i] || t('Driver {n}', { n: i + 1 });
+// Route i is driven by the i-th driver of the day's crew (see crewFor).
+const driverName = (i, crew = currentCrew()) => crew[i] || t('Driver {n}', { n: i + 1 });
+
+// Drivers scheduled on `date` (Plan → Who works each day), in driver-list order.
+function scheduledFor(date) {
+  return (settings.schedule?.[weekdayOf(date)] || []).filter((name) => settings.drivers.includes(name));
+}
+
+// Who drives on `date`, in order: the scheduled drivers, then everyone else (for the "one more
+// driver" comparison). With no schedule for that weekday, simply the driver list.
+function crewFor(date) {
+  const working = scheduledFor(date);
+  if (!working.length) return settings.drivers;
+  return [...working, ...settings.drivers.filter((name) => !working.includes(name))];
+}
+
+// The crew of the plan on screen (fixed when it was built), else the schedule for the day.
+const currentCrew = () => plan?.crew || crewFor(planDate);
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true });
 const depotName = () => settings.depotName || t('Warehouse');
 const depotPoint = () => (settings.depotLat == null ? null : { lat: Number(settings.depotLat), lng: Number(settings.depotLng) });
@@ -358,10 +375,11 @@ function payRules() {
 }
 
 // Paid minutes driver i already has this week (from History, unless typed in for this day).
-function weekBefore(i, history) {
-  const typed = day?.weekHours?.[i];
+function weekBefore(i, history, crew = currentCrew()) {
+  const name = driverName(i, crew);
+  const typed = day?.weekHours?.[name];
   if (typed != null && typed !== '') return Number(typed) * 60;
-  return minutesBefore(history, planDate, driverName(i));
+  return minutesBefore(history, planDate, name);
 }
 
 // Records real return times (from trucks or typed in) and saves History once.
@@ -379,7 +397,7 @@ function saveReturns(entries, source) {
 function problemFor(p, k) {
   const perMinute = p.payRate / 60;
   const index = (name) => {
-    const i = settings.drivers.indexOf(name);
+    const i = (p.crew || settings.drivers).indexOf(name);
     return i >= 0 && i < k ? i : null;
   };
   return {
@@ -489,6 +507,13 @@ function loadDay(date) {
   day.weekHours ||= {};
   plan = store.getPlan(date);
   suggestion = null;
+  // The number of drivers follows who is scheduled that weekday.
+  const scheduled = scheduledFor(date).length;
+  if (scheduled && scheduled !== settings.driverCount) {
+    settings.driverCount = scheduled;
+    saveSettings();
+  }
+  $('#plan-drivers').value = settings.driverCount;
   // Stops checked or unchecked (e.g. by QuickBooks) while another day was open.
   if (plan) {
     const inPlan = new Set(plan.stops.map((s) => s.id));
@@ -526,7 +551,7 @@ function renderDriverRows() {
   const k = Math.min(MAX_DRIVERS, settings.driverCount + 1);
   $('#driver-rows').innerHTML = Array.from({ length: k }, (_, i) => {
     const before = weekBefore(i, history);
-    const typed = day.weekHours[i];
+    const typed = day.weekHours[driverName(i)];
     const extra = i >= settings.driverCount ? ` <span class="muted small">${t('(only if one more driver)')}</span>` : '';
     const side = driverSides()[driverName(i)] || '';
     const sideNames = { west: t('Westside'), east: t('Eastside'), southeast: t('Horizon / Socorro'), central: t('Central') };
@@ -565,7 +590,7 @@ function renderStops() {
   // On a route: that driver, in the route's colour. Otherwise: who usually takes them.
   const driverTag = (c) => {
     const on = assigned.get(c.id);
-    if (on) return ` <span class="tag on-route" style="--route:${COLORS[settings.drivers.indexOf(on) % COLORS.length]}">🚚 ${esc(on)}</span>`;
+    if (on) return ` <span class="tag on-route" style="--route:${COLORS[currentCrew().indexOf(on) % COLORS.length]}">🚚 ${esc(on)}</span>`;
     const home = homeOf(c, learned);
     return home ? ` <span class="tag">${t('usually {name}', { name: esc(home) })}</span>` : '';
   };
@@ -699,19 +724,21 @@ $('#driver-rows').addEventListener('change', (e) => {
     saveSettings();
     renderStops();
   }
-  if (d != null) renameDriver(Number(d), e.target.value.trim() || t('Driver {n}', { n: Number(d) + 1 }));
+  if (d != null) renameDriver(driverName(Number(d)), e.target.value.trim() || driverName(Number(d)));
   if (h != null) {
-    day.weekHours[h] = e.target.value;
+    day.weekHours[driverName(Number(h))] = e.target.value;
     saveDay();
   }
   renderDriverRows();
 });
 
 // A truck assignment follows the driver when they're renamed.
-function renameDriver(i, name) {
-  const old = settings.drivers[i];
-  if (old === name) return;
+function renameDriver(old, name) {
+  const i = settings.drivers.indexOf(old);
+  if (old === name || i < 0) return;
   settings.drivers[i] = name;
+  settings.schedule = Object.fromEntries(Object.entries(settings.schedule || {}).map(([wd, names]) => [wd, names.map((n) => (n === old ? name : n))]));
+  if (plan?.crew) plan.crew = plan.crew.map((n) => (n === old ? name : n));
   if (settings.trucks?.[old]) {
     settings.trucks = { ...settings.trucks, [name]: settings.trucks[old] };
     delete settings.trucks[old];
@@ -810,10 +837,12 @@ async function buildRoutes() {
       const tables = await tablesFor(depot, stops, status);
       const rules = payRules();
       const history = store.getHistory();
-      const weekMin = Array.from({ length: MAX_DRIVERS }, (_, i) => weekBefore(i, history));
+      const crew = crewFor(planDate);
+      const weekMin = Array.from({ length: MAX_DRIVERS }, (_, i) => weekBefore(i, history, crew));
 
       plan = {
         date: planDate,
+        crew,
         created: Date.now(),
         shiftStart,
         start,
@@ -925,19 +954,32 @@ function savePlan() {
 // working that day. Nothing is sent to drivers' phones and today's plan isn't touched.
 
 const BOOK_DAYS = [1, 2, 3, 4, 5, 6]; // Monday to Saturday
-const bookDrivers = () => ({ 1: 4, 2: 3, 3: 3, 4: 3, 5: 4, 6: 4, ...(settings.bookDrivers || {}) });
 let book = null; // [{ date, k, routes: [{ name, stops: [{ name, address, arrive, unload, notes }], back, miles }], missing }]
 
+// Who works each day: a grid of weekdays by drivers (Plan screen).
 function renderBookControls() {
-  const counts = bookDrivers();
-  $('#book-days').innerHTML = BOOK_DAYS.map((wd) => `<label>${DAYS[wd]} <select data-book-day="${wd}">${Array.from({ length: MAX_DRIVERS }, (_, i) => `<option value="${i + 1}" ${counts[wd] === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label>`).join('');
+  const used = Math.max(0, ...Object.values(settings.schedule || {}).flat().map((n) => settings.drivers.indexOf(n) + 1));
+  const names = settings.drivers.slice(0, Math.max(4, settings.driverCount + 1, used));
+  const on = (wd, name) => (settings.schedule?.[wd] || []).includes(name);
+  $('#book-days').innerHTML =
+    `<table class="schedule"><thead><tr><th></th>${names.map((n) => `<th>${esc(n)}</th>`).join('')}<th></th></tr></thead><tbody>` +
+    BOOK_DAYS.map((wd) => `<tr><th>${DAYS[wd]}</th>${names.map((n) => `<td><input type="checkbox" data-sched-day="${wd}" data-sched-name="${esc(n)}" ${on(wd, n) ? 'checked' : ''} aria-label="${esc(n)} ${DAYS[wd]}" /></td>`).join('')}<td class="muted small">${plural(names.filter((n) => on(wd, n)).length, '1 driver', '{n} drivers')}</td></tr>`).join('') +
+    '</tbody></table>';
 }
 
 $('#book-days').addEventListener('change', (e) => {
-  const wd = e.target.dataset.bookDay;
+  const wd = e.target.dataset.schedDay;
   if (!wd) return;
-  settings.bookDrivers = { ...bookDrivers(), [wd]: Number(e.target.value) };
+  const names = new Set(settings.schedule?.[wd] || []);
+  if (e.target.checked) names.add(e.target.dataset.schedName);
+  else names.delete(e.target.dataset.schedName);
+  settings.schedule = { ...(settings.schedule || {}), [wd]: settings.drivers.filter((n) => names.has(n)) };
   saveSettings();
+  renderBookControls();
+  if (Number(wd) === weekdayOf(planDate)) {
+    loadDay(planDate);
+    renderResults();
+  }
 });
 
 // The next six working days, in date order starting tomorrow.
@@ -945,7 +987,9 @@ function nextWeekDates() {
   return Array.from({ length: 7 }, (_, i) => addDays(localDate(), i + 1)).filter((d) => BOOK_DAYS.includes(weekdayOf(d)));
 }
 
-async function planBookDay(date, k, status) {
+async function planBookDay(date, status) {
+  const crew = crewFor(date);
+  const k = scheduledFor(date).length || settings.driverCount;
   const depot = depotPoint();
   const learned = usualDrivers(date);
   const expected = expectedClients(date);
@@ -957,6 +1001,7 @@ async function planBookDay(date, k, status) {
   const p = {
     stops,
     depot,
+    crew,
     shiftStart: toMin(settings.shiftStart),
     start: toMin(settings.start),
     endBy: toMin(settings.latestReturn),
@@ -974,7 +1019,7 @@ async function planBookDay(date, k, status) {
     k,
     missing: expected.filter((c) => !hasLoc(c)).map((c) => c.name),
     routes: s.routes.map((route, i) => ({
-      name: driverName(i),
+      name: driverName(i, crew),
       back: route.finish,
       miles: route.miles,
       stops: route.order.map((idx, n) => {
@@ -1006,11 +1051,10 @@ $('#btn-make-book').addEventListener('click', (e) =>
   busy(e.currentTarget, async (status) => {
     if (!depotPoint()) return alert(t('Set the warehouse location in Settings first.'));
     try {
-      const counts = bookDrivers();
       const out = [];
       for (const date of nextWeekDates()) {
         status(t('Planning {day}…', { day: DAYS[weekdayOf(date)] }));
-        out.push(await planBookDay(date, counts[weekdayOf(date)], status));
+        out.push(await planBookDay(date, status));
       }
       book = out;
       renderBook();
@@ -1388,7 +1432,7 @@ function updatePlannedDriver(id) {
   const name = assignedDriver(c, day.selected[id]);
   plan.stops[idx - 1].driver = name;
   for (const opt of plan.options) {
-    const to = settings.drivers.indexOf(name);
+    const to = currentCrew().indexOf(name);
     if (!name || to < 0 || to >= opt.k || opt.orders[to].includes(idx)) continue;
     const orders = opt.orders.map((o) => o.filter((x) => x !== idx));
     opt.orders = insertStop(orders, problemFor(plan, opt.k), idx, orders.map((_, j) => (j === to ? 0 : Infinity)));

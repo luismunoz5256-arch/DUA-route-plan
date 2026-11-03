@@ -1,12 +1,15 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "Standard routes for each day of the coming week, to print and give to drivers: the clients likely to order that day (from past orders, or their usual days), planned with the drivers who work that day (Who works each day, above), the saved drive times, real stop times and each driver's side of town. It doesn't change today's plan or send anything to phones.": "Rutas estándar para cada día de la próxima semana, para imprimir y dar a los choferes: los clientes que probablemente pidan ese día (según pedidos pasados, o sus días de siempre), planeadas con los choferes que trabajan ese día (Quién trabaja cada día, arriba), los tiempos de manejo guardados, los tiempos reales de parada y el lado de la ciudad de cada chofer. No cambia el plan de hoy ni envía nada a los teléfonos.",
+  "Who works each day": "Quién trabaja cada día",
+  "Tick who drives each weekday. Building routes uses that day's drivers (and the number of drivers follows it), so each route goes to the right driver's phone; the weekly route book uses it too.": "Marque quién maneja cada día de la semana. Al crear rutas se usan los choferes de ese día (y el número de choferes lo sigue), así cada ruta llega al teléfono del chofer correcto; el libro de rutas de la semana también lo usa.",
   "Not on these routes (no map location): {names}": "No están en estas rutas (sin ubicación en el mapa): {names}",
   "{n} stops · back about {time} · {mi} mi": "{n} paradas · regreso como a las {time} · {mi} mi",
   "Planning {day}…": "Planeando {day}…",
   "Arrive about": "Llega como a las",
   "Weekly route book": "Libro de rutas de la semana",
-  "Standard routes for each day of the coming week, to print and give to drivers: the clients likely to order that day (from past orders, or their usual days), planned with the number of drivers below, the saved drive times, real stop times and each driver's side of town. It doesn't change today's plan or send anything to phones.": "Rutas estándar para cada día de la próxima semana, para imprimir y dar a los choferes: los clientes que probablemente pidan ese día (según pedidos pasados, o sus días de siempre), planeadas con el número de choferes de abajo, los tiempos de manejo guardados, los tiempos reales de parada y el lado de la ciudad de cada chofer. No cambia el plan de hoy ni envía nada a los teléfonos.",
+
   "Make weekly routes": "Crear rutas de la semana",
   "Print": "Imprimir",
   "Download (CSV)": "Descargar (CSV)",

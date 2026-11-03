@@ -333,7 +333,13 @@ body[data-role='driver'] main { padding: 0; }
 .loading-list li { padding: 0.15rem 0; font-size: 0.9rem; display: flex; gap: 0.4rem; align-items: center; }
 .loading-list .box { width: 0.9rem; height: 0.9rem; border: 1.5px solid #333; border-radius: 2px; flex: none; }
 
-.book-days label { min-width: 4.5rem; }
+.schedule-card summary { cursor: pointer; list-style: none; }
+.schedule-card summary h2 { display: inline; }
+.schedule-card summary::before { content: '▸ '; color: var(--brand); }
+.schedule-card[open] summary::before { content: '▾ '; }
+table.schedule { width: auto; }
+table.schedule th, table.schedule td { text-align: center; padding: 0.35rem 0.6rem; }
+table.schedule tbody th { text-align: left; }
 .book-day { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem; box-shadow: var(--shadow); }
 .book-routes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 0.8rem; }
 .book-route { border-top: 5px solid var(--route); padding-top: 0.4rem; }
