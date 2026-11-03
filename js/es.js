@@ -1,6 +1,16 @@
 // Spanish for every English text in the app (the English text is the key). See i18n.js.
 // test/i18n.test.js checks that nothing on screen is missing from this list.
 export const ES = {
+  "Not on these routes (no map location): {names}": "No están en estas rutas (sin ubicación en el mapa): {names}",
+  "{n} stops · back about {time} · {mi} mi": "{n} paradas · regreso como a las {time} · {mi} mi",
+  "Planning {day}…": "Planeando {day}…",
+  "Arrive about": "Llega como a las",
+  "Weekly route book": "Libro de rutas de la semana",
+  "Standard routes for each day of the coming week, to print and give to drivers: the clients likely to order that day (from past orders, or their usual days), planned with the number of drivers below, the saved drive times, real stop times and each driver's side of town. It doesn't change today's plan or send anything to phones.": "Rutas estándar para cada día de la próxima semana, para imprimir y dar a los choferes: los clientes que probablemente pidan ese día (según pedidos pasados, o sus días de siempre), planeadas con el número de choferes de abajo, los tiempos de manejo guardados, los tiempos reales de parada y el lado de la ciudad de cada chofer. No cambia el plan de hoy ni envía nada a los teléfonos.",
+  "Make weekly routes": "Crear rutas de la semana",
+  "Print": "Imprimir",
+  "Download (CSV)": "Descargar (CSV)",
+  "1 stop": "1 parada",
   "Westside": "Lado oeste",
   "Eastside": "Lado este",
   "Horizon / Socorro": "Horizon / Socorro",

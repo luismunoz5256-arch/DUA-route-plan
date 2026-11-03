@@ -333,6 +333,23 @@ body[data-role='driver'] main { padding: 0; }
 .loading-list li { padding: 0.15rem 0; font-size: 0.9rem; display: flex; gap: 0.4rem; align-items: center; }
 .loading-list .box { width: 0.9rem; height: 0.9rem; border: 1.5px solid #333; border-radius: 2px; flex: none; }
 
+.book-days label { min-width: 4.5rem; }
+.book-day { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem; box-shadow: var(--shadow); }
+.book-routes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 0.8rem; }
+.book-route { border-top: 5px solid var(--route); padding-top: 0.4rem; }
+.book-route h3 { margin: 0 0 0.4rem; font-size: 1rem; }
+.book-route ol { margin: 0; padding-left: 1.4rem; }
+.book-route li { padding: 0.2rem 0; break-inside: avoid; }
+.book-route .time { font-weight: 600; display: inline-block; min-width: 4.6rem; }
+.book-route .addr { font-size: 0.8rem; color: var(--muted); }
+
+@media print {
+  body.printing-book main > section:not(#tab-plan), body.printing-book #tab-plan > :not(#book) { display: none !important; }
+  body.printing-book #book { display: block !important; }
+  body:not(.printing-book) #book { display: none !important; }
+  body.printing-book .book-day { break-after: page; border: 0; box-shadow: none; padding: 0; }
+}
+
 @media print {
   .topbar, .banner, #tab-plan > .card, #tab-plan > .row, #results > .card, .noprint, .driver .actions, .driver li .edit { display: none !important; }
   body { background: #fff; }

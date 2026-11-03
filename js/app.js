@@ -507,6 +507,7 @@ function saveDay() {
 }
 
 function renderPlanControls() {
+  renderBookControls();
   $('#plan-date').value = planDate;
   $('#plan-drivers').innerHTML = Array.from({ length: MAX_DRIVERS }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join('');
   $('#plan-drivers').value = settings.driverCount;
@@ -754,8 +755,8 @@ function hoursOn(c, weekday) {
 
 const hoursText = ({ open, close }) => (open || close ? `${open ? fmtTime(toMin(open)) : '…'} – ${close ? fmtTime(toMin(close)) : '…'}` : '');
 
-function stopFromClient(c, sel, home = '') {
-  const hours = hoursOn(c, weekdayOf(planDate));
+function stopFromClient(c, sel, home = '', date = planDate) {
+  const hours = hoursOn(c, weekdayOf(date));
   const prio = sel.priority ? toMin(sel.by || settings.priorityBy) : null;
   const close = toMin(hours.close);
   return {
@@ -917,6 +918,121 @@ function savePlan() {
   for (const d of before) if (d.source && !drivers.some((x) => x.name === d.name)) drivers.push(d);
   store.saveHistoryDay(plan.date, { drivers, shiftStart: plan.shiftStart, stops: plan.stops.length, miles: ev.miles });
 }
+
+// ---------- Weekly route book ----------
+// Standard routes for each weekday of the coming week, to print and hand to drivers: the clients
+// likely to order that day (from past orders, else their usual days), planned with the drivers
+// working that day. Nothing is sent to drivers' phones and today's plan isn't touched.
+
+const BOOK_DAYS = [1, 2, 3, 4, 5, 6]; // Monday to Saturday
+const bookDrivers = () => ({ 1: 4, 2: 3, 3: 3, 4: 3, 5: 4, 6: 4, ...(settings.bookDrivers || {}) });
+let book = null; // [{ date, k, routes: [{ name, stops: [{ name, address, arrive, unload, notes }], back, miles }], missing }]
+
+function renderBookControls() {
+  const counts = bookDrivers();
+  $('#book-days').innerHTML = BOOK_DAYS.map((wd) => `<label>${DAYS[wd]} <select data-book-day="${wd}">${Array.from({ length: MAX_DRIVERS }, (_, i) => `<option value="${i + 1}" ${counts[wd] === i + 1 ? 'selected' : ''}>${i + 1}</option>`).join('')}</select></label>`).join('');
+}
+
+$('#book-days').addEventListener('change', (e) => {
+  const wd = e.target.dataset.bookDay;
+  if (!wd) return;
+  settings.bookDrivers = { ...bookDrivers(), [wd]: Number(e.target.value) };
+  saveSettings();
+});
+
+// The next six working days, in date order starting tomorrow.
+function nextWeekDates() {
+  return Array.from({ length: 7 }, (_, i) => addDays(localDate(), i + 1)).filter((d) => BOOK_DAYS.includes(weekdayOf(d)));
+}
+
+async function planBookDay(date, k, status) {
+  const depot = depotPoint();
+  const learned = usualDrivers(date);
+  const expected = expectedClients(date);
+  const located = expected.filter(hasLoc);
+  const stops = located.map((c) => stopFromClient(c, newSelection(), homeOf(c, learned, date), date));
+  if (!stops.length) return { date, k, routes: [], missing: expected.filter((c) => !hasLoc(c)).map((c) => c.name) };
+  const tables = await tablesFor(depot, stops, status);
+  const rules = payRules();
+  const p = {
+    stops,
+    depot,
+    shiftStart: toMin(settings.shiftStart),
+    start: toMin(settings.start),
+    endBy: toMin(settings.latestReturn),
+    payRate: num(settings.payRate, 14),
+    fuelPerMile: num(settings.fuelPerMile, 0),
+    otAt: Array.from({ length: MAX_DRIVERS }, () => overtimeStart({ ...rules, weekBeforeMin: 0 })),
+    switchAt: tables.time2 ? afternoonFrom() : null,
+    problem: { time: tables.time, ...(tables.time2 ? { time2: tables.time2 } : {}), dist: tables.dist, service: [0, ...stops.map((s) => s.unload)], open: [null, ...stops.map((s) => s.open)], due: [null, ...stops.map((s) => s.due)] },
+  };
+  const problem = problemFor(p, k);
+  const r = await runSolve(problem, { timeLimitMs: 3000, weights: { balance: BALANCE[settings.balance] ?? 0.15 } });
+  const s = summarize(r.routes.map((x) => x.order), problem);
+  return {
+    date,
+    k,
+    missing: expected.filter((c) => !hasLoc(c)).map((c) => c.name),
+    routes: s.routes.map((route, i) => ({
+      name: driverName(i),
+      back: route.finish,
+      miles: route.miles,
+      stops: route.order.map((idx, n) => {
+        const st = stops[idx - 1];
+        return { name: st.name, address: st.address, arrive: route.stops[n].arrive, unload: st.unload, notes: st.notes };
+      }),
+    })),
+  };
+}
+
+function renderBook() {
+  $('#book').hidden = !book;
+  if (!book) return;
+  $('#book').innerHTML = book
+    .map((d) => `<section class="book-day">
+      <h2>${esc(fmtDateLong(d.date))} · ${plural(d.k, '1 driver', '{n} drivers')} · ${plural(d.routes.reduce((a, r) => a + r.stops.length, 0), '1 stop', '{n} stops')}</h2>
+      ${d.missing.length ? `<p class="warn-text small">⚠ ${esc(t('Not on these routes (no map location): {names}', { names: d.missing.join(', ') }))}</p>` : ''}
+      <div class="book-routes">${d.routes
+        .map((r, i) => `<div class="book-route" style="--route:${COLORS[i % COLORS.length]}">
+          <h3>${esc(r.name)} <span class="muted small">${r.stops.length ? t('{n} stops · back about {time} · {mi} mi', { n: r.stops.length, time: fmtTime(r.back), mi: Math.round(r.miles) }) : t('No stops for this driver.')}</span></h3>
+          <ol>${r.stops.map((s) => `<li><span class="time">${fmtTime(s.arrive)}</span> <b>${esc(s.name)}</b><div class="addr">${esc(s.address)}${s.notes ? ' · ' + esc(s.notes) : ''}</div></li>`).join('')}</ol>
+        </div>`)
+        .join('')}</div>
+    </section>`)
+    .join('');
+}
+
+$('#btn-make-book').addEventListener('click', (e) =>
+  busy(e.currentTarget, async (status) => {
+    if (!depotPoint()) return alert(t('Set the warehouse location in Settings first.'));
+    try {
+      const counts = bookDrivers();
+      const out = [];
+      for (const date of nextWeekDates()) {
+        status(t('Planning {day}…', { day: DAYS[weekdayOf(date)] }));
+        out.push(await planBookDay(date, counts[weekdayOf(date)], status));
+      }
+      book = out;
+      renderBook();
+      $('#btn-print-book').hidden = $('#btn-book-csv').hidden = false;
+    } catch (err) {
+      console.error(err);
+      alert(t('Something went wrong:') + ' ' + err.message);
+    }
+  }),
+);
+
+$('#btn-print-book').addEventListener('click', () => {
+  document.body.classList.add('printing-book');
+  window.print();
+  document.body.classList.remove('printing-book');
+});
+
+$('#btn-book-csv').addEventListener('click', () => {
+  const rows = [[t('Day'), t('Driver'), '#', t('Client'), t('Address'), t('Arrive about'), t('Notes')]];
+  for (const d of book || []) for (const r of d.routes) r.stops.forEach((s, n) => rows.push([`${DAYS[weekdayOf(d.date)]} ${d.date}`, r.name, n + 1, s.name, s.address, fmtTime(s.arrive), s.notes || '']));
+  download(`weekly-routes-${nextWeekDates()[0] || localDate()}.csv`, toCsv(rows), 'text/csv');
+});
 
 // ---------- Results ----------
 
