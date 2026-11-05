@@ -819,7 +819,8 @@ async function buildRoutes() {
   }
 
   const t0 = performance.now();
-  await busy($('#btn-optimize'), async () => {
+  await planQueue; // let orders being added finish first
+  await busy($('#btn-optimize'), () => duringPlanWork(async () => {
     try {
       if (settings.apiKey) await locateClients(chosen, status);
       const stillMissing = chosen.filter((c) => !hasLoc(c));
@@ -921,7 +922,7 @@ async function buildRoutes() {
       status('');
       alert(t('Something went wrong:') + ' ' + err.message);
     }
-  });
+  }));
 }
 
 // Saves the plan, publishes each driver's route, and records the viewed plan in History.
@@ -1451,11 +1452,24 @@ function updatePlannedDriver(id) {
 // each driver's best order without moving any stop to another truck.
 
 let planQueue = Promise.resolve();
+let planWork = 0; // plan changes under way (building, adding stops, final order): syncs leave the plan alone
+
+// Runs a change to the plan while keeping syncs from swapping the plan underneath it: a build takes
+// several seconds, and a sync in between (e.g. new QuickBooks invoices) used to replace the plan
+// being built with the saved one (none yet), which failed with "Cannot read properties of null".
+async function duringPlanWork(work) {
+  planWork++;
+  try {
+    return await work();
+  } finally {
+    planWork--;
+  }
+}
 let suggestion = null; // moves "Set final driving order" found worth making: { k, orders, saves, moves }
 
 // Plan changes run one at a time, in the order they were asked for.
 function queuePlan(work) {
-  planQueue = planQueue.then(work).catch((err) => {
+  planQueue = planQueue.then(() => duringPlanWork(work)).catch((err) => {
     console.error(err);
     liveMsg(errorText(err));
   });
@@ -1707,7 +1721,7 @@ function renderFinal() {
 
 async function setFinalOrder(btn) {
   await planQueue;
-  await busy(btn, async (status) => {
+  await busy(btn, (status) => duringPlanWork(async () => {
     const weights = { balance: BALANCE[settings.balance] ?? 0.15 };
     status(t('Working…'));
     for (const opt of plan.options) {
@@ -1741,7 +1755,7 @@ async function setFinalOrder(btn) {
     plan.fresh = plan.free = null;
     savePlan();
     renderResults();
-  });
+  }));
 }
 
 $('#btn-final').addEventListener('click', (e) => setFinalOrder(e.currentTarget));
@@ -2512,7 +2526,12 @@ function reloadFromStore() {
   if (role() === 'driver') return renderDriverView();
   renderPlanControls();
   renderBanner();
-  // Another computer may have picked stops or changed the routes for this day.
+  // Another computer may have picked stops or changed the routes for this day. While this computer
+  // is changing the plan, it keeps its own (it's saved, and shared, when the change is done).
+  if (planWork) {
+    renderStops();
+    return;
+  }
   day = store.getDay(planDate) || day;
   if (day) day.weekHours ||= {};
   const shared = store.getPlan(planDate);
