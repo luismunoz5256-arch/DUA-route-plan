@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <meta name="build" content="0242c778" />
+    <meta name="build" content="f1c5432c" />
     <title>DUA Route Planner</title>
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png" />
@@ -335,7 +335,7 @@
           <label>Orders close at <input name="orderCutoff" type="time" /></label>
           <label>Keep a client with their usual driver unless moving saves more than ($) <input name="keepWithDriver" type="number" step="1" min="0" /></label>
           <label>Learn usual drivers until (no usual drivers before then) <input name="learnUntil" type="date" /></label>
-          <label class="inline span2"><input type="checkbox" name="forecast" /> Order forecast: on a new day, check the clients who ordered on at least half of the same weekdays lately (instead of only their usual days)</label>
+          <label class="inline span2"><input type="checkbox" name="forecast" /> Order forecast: Select likely orders and the weekly route book use the clients who ordered on at least half of the same weekdays lately (instead of only their usual days)</label>
           <p class="span2 muted small" id="learn-line"></p>
           <p class="span2 muted small">After routes are built, new orders go straight onto a truck so drivers can load while orders come in. At closing time the app sets each driver's best driving order without moving stops between trucks.</p>
 
@@ -415,7 +415,7 @@
         <div class="card prose" data-lang="en">
           <h2>Daily use</h2>
           <ol>
-            <li>Open <b>Plan routes</b>. Pick the delivery date. Clients expected to order are already checked: from past orders on the same weekday (📈 3/4 = ordered 3 of the last 4 times), or their usual days until there's enough history.</li>
+            <li>Open <b>Plan routes</b>. Pick the delivery date. A new day starts with nothing checked: each QuickBooks invoice for that date checks its client. To check the clients expected to order before invoices are made, press <b>Select likely orders</b> (📈 3/4 = ordered 3 of the last 4 times).</li>
             <li>Check or uncheck stops to match today's orders. Tick <b>Priority</b> for anything that must arrive early and set its <b>Deliver by</b> time.</li>
             <li>Choose the number of drivers. Check each driver's hours so far this week (filled in from History).</li>
             <li>Click <b>Build routes</b>. You see the plan for the number of drivers you picked. <b>Compare driver counts</b> also shows one driver fewer and one more, with labor (overtime at 1.5×) and fuel. The cheapest on-time plan is marked <span class="tag good">Best</span>; click its row (or <b>Show that plan</b>) to switch to it.</li>
@@ -472,7 +472,7 @@
         <div class="card prose" data-lang="es">
           <h2>Uso diario</h2>
           <ol>
-            <li>Abra <b>Planear rutas</b>. Elija la fecha de entrega. Los clientes que probablemente pidan ya están marcados: según los pedidos pasados del mismo día de la semana (📈 3/4 = pidió 3 de las últimas 4 veces), o sus días de siempre mientras no haya suficiente historial.</li>
+            <li>Abra <b>Planear rutas</b>. Elija la fecha de entrega. Un día nuevo empieza sin nada marcado: cada factura de QuickBooks de esa fecha marca a su cliente. Para marcar los clientes que probablemente pidan antes de que haya facturas, presione <b>Marcar pedidos probables</b> (📈 3/4 = pidió 3 de las últimas 4 veces).</li>
             <li>Marque o desmarque paradas según los pedidos de hoy. Marque <b>Prioridad</b> en lo que debe llegar temprano y ponga su hora en <b>Entregar antes de</b>.</li>
             <li>Elija el número de choferes. Revise las horas de cada chofer en lo que va de la semana (vienen del Historial).</li>
             <li>Haga clic en <b>Crear rutas</b>. Verá el plan con el número de choferes que eligió. <b>Comparar número de choferes</b> también muestra un chofer menos y uno más, con mano de obra (tiempo extra a 1.5×) y combustible. El plan más barato a tiempo está marcado como <span class="tag good">Mejor</span>; haga clic en su fila (o en <b>Ver ese plan</b>) para cambiar a él.</li>
@@ -568,7 +568,7 @@
     </dialog>
 
     <script src="vendor/leaflet/leaflet.js"></script>
-    <script type="importmap">{"imports":{"./js/api.js":"./js/api.js?v=e1a24704","./js/app.js":"./js/app.js?v=4bab0b99","./js/config.js":"./js/config.js?v=68783d5e","./js/driver.js":"./js/driver.js?v=ed87f02d","./js/es.js":"./js/es.js?v=e70d7969","./js/forecast.js":"./js/forecast.js?v=6dea3fa6","./js/google.js":"./js/google.js?v=9e85b48c","./js/i18n.js":"./js/i18n.js?v=7236dc39","./js/maps.js":"./js/maps.js?v=6347d58e","./js/matrix.js":"./js/matrix.js?v=13b2f6ac","./js/merge.js":"./js/merge.js?v=cef35c03","./js/pay.js":"./js/pay.js?v=3a38de1c","./js/routeview.js":"./js/routeview.js?v=d175ee8f","./js/scorecard.js":"./js/scorecard.js?v=1bf7674f","./js/share.js":"./js/share.js?v=b023bbd3","./js/sides.js":"./js/sides.js?v=8469d1a4","./js/solver-worker.js":"./js/solver-worker.js?v=821c0718","./js/solver.js":"./js/solver.js?v=4fa50640","./js/stays.js":"./js/stays.js?v=99a8d412","./js/store.js":"./js/store.js?v=508c3a9d","./js/sync.js":"./js/sync.js?v=4ec64a13","./js/tracking.js":"./js/tracking.js?v=5612cc24","./js/util.js":"./js/util.js?v=1ecf69be"}}</script>
-    <script type="module" src="js/app.js?v=4bab0b99"></script>
+    <script type="importmap">{"imports":{"./js/api.js":"./js/api.js?v=e1a24704","./js/app.js":"./js/app.js?v=4bd6dffc","./js/config.js":"./js/config.js?v=68783d5e","./js/driver.js":"./js/driver.js?v=ed87f02d","./js/es.js":"./js/es.js?v=f409f89c","./js/forecast.js":"./js/forecast.js?v=6dea3fa6","./js/google.js":"./js/google.js?v=9e85b48c","./js/i18n.js":"./js/i18n.js?v=7236dc39","./js/maps.js":"./js/maps.js?v=6347d58e","./js/matrix.js":"./js/matrix.js?v=13b2f6ac","./js/merge.js":"./js/merge.js?v=cef35c03","./js/pay.js":"./js/pay.js?v=3a38de1c","./js/routeview.js":"./js/routeview.js?v=d175ee8f","./js/scorecard.js":"./js/scorecard.js?v=1bf7674f","./js/share.js":"./js/share.js?v=b023bbd3","./js/sides.js":"./js/sides.js?v=8469d1a4","./js/solver-worker.js":"./js/solver-worker.js?v=821c0718","./js/solver.js":"./js/solver.js?v=4fa50640","./js/stays.js":"./js/stays.js?v=99a8d412","./js/store.js":"./js/store.js?v=508c3a9d","./js/sync.js":"./js/sync.js?v=4ec64a13","./js/tracking.js":"./js/tracking.js?v=5612cc24","./js/util.js":"./js/util.js?v=1ecf69be"}}</script>
+    <script type="module" src="js/app.js?v=4bd6dffc"></script>
   </body>
 </html>

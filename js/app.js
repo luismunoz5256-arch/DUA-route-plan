@@ -495,15 +495,15 @@ function expectedClients(date) {
   return clients.filter((c) => c.active !== false && (likely(c) ?? isScheduled(c, weekday)));
 }
 
-function newDay(date) {
-  const selected = {};
-  for (const c of expectedClients(date)) selected[c.id] = newSelection();
-  return { selected, shiftStart: settings.shiftStart, start: settings.start, latestReturn: settings.latestReturn, weekHours: {} };
+// A new day starts with nothing checked: stops are checked by QuickBooks invoices (or by hand,
+// or with Select likely orders).
+function newDay() {
+  return { selected: {}, shiftStart: settings.shiftStart, start: settings.start, latestReturn: settings.latestReturn, weekHours: {} };
 }
 
 function loadDay(date) {
   planDate = date;
-  day = store.getDay(date) || newDay(date);
+  day = store.getDay(date) || newDay();
   day.weekHours ||= {};
   plan = store.getPlan(date);
   suggestion = null;
@@ -585,7 +585,7 @@ function renderStops() {
     settings.forecast === false
       ? ''
       : forecast.days >= MIN_WEEKS
-        ? t('📈 Forecast for {day}: {n} clients ordered on at least half of the last {weeks} same weekdays and are checked on a new day. 📈 3/4 = ordered 3 of the last 4 times.', { n: clients.filter((c) => isLikely(forecast, c.id)).length, weeks: forecast.days, day: DAYS[weekday] })
+        ? t('📈 Forecast for {day}: {n} clients ordered on at least half of the last {weeks} same weekdays (Select likely orders checks them). 📈 3/4 = ordered 3 of the last 4 times.', { n: clients.filter((c) => isLikely(forecast, c.id)).length, weeks: forecast.days, day: DAYS[weekday] })
         : t('📈 The order forecast for {day} starts after 2 weeks of routes on that weekday; until then the usual days are used.', { day: DAYS[weekday] });
   // On a route: that driver, in the route's colour. Otherwise: who usually takes them.
   const driverTag = (c) => {
@@ -1626,7 +1626,7 @@ function applyQuickBooks() {
       if (isNew) fresh.push(c);
       refs.set(c.id, [...(refs.get(c.id) || []), inv.ref || inv.id]);
     }
-    const d = date === planDate ? day : store.getDay(date) || newDay(date);
+    const d = date === planDate ? day : store.getDay(date) || newDay();
     const was = canonical(d.selected);
     const added = [];
     const removed = [];
