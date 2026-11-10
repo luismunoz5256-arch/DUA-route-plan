@@ -721,6 +721,7 @@ $('#driver-rows').addEventListener('change', (e) => {
     if (e.target.value) sides[driverName(Number(sd))] = e.target.value;
     else delete sides[driverName(Number(sd))];
     settings.sides = sides;
+    settings.sidesChanged = Date.now(); // the next build follows the new sides (see optimize)
     saveSettings();
     renderStops();
   }
@@ -831,8 +832,9 @@ async function buildRoutes() {
       }
       // Rebuilding a plan that already went out keeps each stop with the driver it has now
       // (unless moving saves more than the set amount); new stops go to their usual driver.
+      // After the sides of town change, every stop goes back to its side's driver instead.
       const old = plan?.date === planDate ? plan : null;
-      const current = assignedDrivers(old);
+      const current = old && (settings.sidesChanged || 0) > (old.created || 0) ? new Map() : assignedDrivers(old);
       const learned = usualDrivers();
       const stops = chosen.map((c) => stopFromClient(c, day.selected[c.id], current.get(c.id) || homeOf(c, learned)));
       const tables = await tablesFor(depot, stops, status);
